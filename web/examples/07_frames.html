@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 の例：決まったフレームで描く</title>
+<style>body{margin:0;font:14px system-ui,sans-serif;background:#f4f4f6;color:#222}main{max-width:640px;margin:0 auto;padding:16px}canvas{width:100%;max-width:420px;aspect-ratio:420/600;display:block;margin:12px auto;background:#fff;border-radius:8px}p{line-height:1.6}#out{min-height:1.5em;text-align:center}.row{display:flex;gap:8px;align-items:center}.row input{flex:1}</style>
+<script>/* opened straight from the disk the browser loads no modules: say what to do */ if (location.protocol === 'file:') addEventListener('DOMContentLoaded', function () { var o = document.getElementById('out') || document.querySelector('main'); var p = document.createElement('p'); p.style.color = '#b4502a'; p.textContent = 'ファイルを直接開くと、ブラウザが芯（WASM）とモデルを読ませません。リポジトリのフォルダで node tools/serve.mjs（か npx serve など、どの静的なサーバーでも）を動かし、http://localhost:…/web/examples/ を開いてください。'; o.appendChild(p); });</script>
+</head><body><main>
+<h1>決まったフレームで描く</h1>
+<p>動画の道具（Remotion など）は、フレームを好きな順に、いくつもの所で同時に描かせます。UgoFrames は「0 から決まった速さで流した時の n コマ目」を、どの順に聞かれても同じに返します（髪の揺れ＝物理も）。つまみでコマを選ぶか、「ばらばらの順」で確かめます。</p>
+<canvas id="c" width="420" height="600"></canvas>
+<div class="row"><input type="range" id="n" min="0" max="299" value="0"><output id="nOut">0</output></div>
+<div class="row"><button id="shuffle">ばらばらの順に 300 コマ描いて、順に描いた時と比べる</button></div>
+<div id="out"></div>
+<p><a href="./">例の一覧</a> ・ 関数は docs/芯のAPI.md の「決まったフレームで描く」</p>
+</main>
+<script type="module">
+import { UgoFrames } from '../ugo.js';
+import { start } from './common.js';
+const { model, draw, place } = await start(document.getElementById('c'));
+const fps = 30;
+// the scene: a function of the time only (the idle animation, the head turning, the character walking a little)
+const setup = (inst, t) => {
+  inst.play(model.animations[0]?.name ?? 'idle', t);
+  inst.set('AngleX', 25 * Math.sin(t * 1.7));
+  inst.setTransform(place[0], 0, 0, place[0], place[1] + 20 * Math.sin(t * 0.8), place[2]);
+};
+const frames = new UgoFrames(model, { fps, setup });
+const show = (n) => { draw([frames.frame(n)]); document.getElementById('nOut').textContent = `${n}（${(n / fps).toFixed(2)} 秒）`; };
+document.getElementById('n').oninput = (e) => show(Number(e.target.value));
+show(0);
+document.getElementById('shuffle').onclick = () => {
+  const inOrder = new UgoFrames(model, { fps, setup }), shuffled = new UgoFrames(model, { fps, setup });
+  const want = Array.from({ length: 300 }, (_, n) => Array.from(inOrder.frame(n).frame()));
+  const order = want.map((_, n) => n).sort(() => Math.random() - 0.5);
+  let differ = 0;
+  for (const n of order) { const f = shuffled.frame(n).frame(); if (f.some((v, i) => !Object.is(v, want[n][i]))) differ++; }
+  document.getElementById('out').textContent = differ === 0 ? `300 コマをばらばらの順に描いても、順に描いた時とビット単位で同じ（最初の順：${order.slice(0, 5).join(', ')}…）` : `${differ} コマが違いました`;
+  window.ugoFramesResult = differ;
+};
+</script>
+</body></html>

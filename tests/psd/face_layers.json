@@ -1,0 +1,94 @@
+{
+ "width": 320,
+ "height": 400,
+ "layers": [
+  {
+   "name": "body",
+   "groups": [],
+   "left": 60,
+   "top": 240,
+   "width": 200,
+   "height": 160,
+   "visible": true,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "409b63e88c968137bf76574bdfc392d4cc116338"
+  },
+  {
+   "name": "face",
+   "groups": [],
+   "left": 70,
+   "top": 60,
+   "width": 180,
+   "height": 190,
+   "visible": true,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "8a12c72bdc61fd8c74aae9b017000979bca7c341"
+  },
+  {
+   "name": "eye",
+   "groups": [
+    "eyes"
+   ],
+   "left": 110,
+   "top": 130,
+   "width": 30,
+   "height": 40,
+   "visible": true,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "5ef78e3e42bf278b41d1c5a7c267d7b8898f74dd"
+  },
+  {
+   "name": "eye",
+   "groups": [
+    "eyes"
+   ],
+   "left": 180,
+   "top": 130,
+   "width": 30,
+   "height": 40,
+   "visible": true,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "5ef78e3e42bf278b41d1c5a7c267d7b8898f74dd"
+  },
+  {
+   "name": "blush",
+   "groups": [],
+   "left": 130,
+   "top": 185,
+   "width": 60,
+   "height": 20,
+   "visible": true,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "5f430eec47c24d54724bad7b4ed32022bf4c0ee4"
+  },
+  {
+   "name": "shade",
+   "groups": [],
+   "left": 70,
+   "top": 60,
+   "width": 180,
+   "height": 40,
+   "visible": true,
+   "opacity": 128,
+   "blend": "BlendMode.MULTIPLY",
+   "rgbaSha1": "becd7831f509cdbc797fc0008632cf0550d50194"
+  },
+  {
+   "name": "hidden",
+   "groups": [],
+   "left": 10,
+   "top": 10,
+   "width": 40,
+   "height": 40,
+   "visible": false,
+   "opacity": 255,
+   "blend": "BlendMode.NORMAL",
+   "rgbaSha1": "81adc12ca141174b144f1f8efc5663fd6612dfa0"
+  }
+ ]
+}

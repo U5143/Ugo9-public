@@ -1,0 +1,5 @@
+/* SPDX-FileCopyrightText: 2026 U5143
+ * SPDX-License-Identifier: MIT */
+// Generated from shaders/ugo9.gdshader by CMake. Do not edit.
+#pragma once
+static const char *const UGO9_SHADER_CODE = R"UGO9SHADER(@UGO_SHADER_CODE@)UGO9SHADER";

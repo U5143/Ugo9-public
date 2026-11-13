@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 U5143
+# SPDX-License-Identifier: MIT
+Runtime/Plugins/
+# Unity writes .meta files into a package added from disk; not kept yet (GUIDs settle after the first check on a PC)
+*.meta

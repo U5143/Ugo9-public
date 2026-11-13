@@ -1,0 +1,56 @@
+# Licences of files that can't carry a comment (binaries, images, JSON),
+# in the REUSE format (https://reuse.software). Files that can carry one start
+# with SPDX lines instead. See docs/ライセンス.md.
+version = 1
+
+# the Web runtime's core, built from core/ and web/src/
+[[annotations]]
+path = ["web/ugo.wasm", "web/ugo_simd.wasm"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "MIT"
+
+# the sample character (made by tools/make_sample.mjs)
+[[annotations]]
+path = "samples/basic/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "CC0-1.0"
+
+# test data of the core and format tests
+[[annotations]]
+path = ["tests/pose/rig.json", "tests/pose/rig.ug9", "tests/runs/model.json", "tests/runs/model.ug9", "tests/warp/model.json", "tests/warp/model.ug9", "tests/warp/atlas.png"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "MIT"
+
+# test data of the import and export tests (PSD files made by tests/psd/make_psd.py or byte by byte
+# in it, the Spine test rig, its atlas and picture, PNG files made by tests/layers/make_png.py, Procreate files made by tests/procreate/make_procreate.py)
+[[annotations]]
+path = ["tests/psd/*.psd", "tests/psd/face16_expected.png", "tests/psd/face_layers.json", "tests/spine/rig.json", "tests/spine/rig.atlas", "tests/spine/rig.png", "tests/layers/png/*.png", "tests/layers/png/expected.json", "tests/procreate/*.procreate", "tests/procreate/*.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "MIT"
+
+# game engine integrations: files that can't carry a comment (Godot scenes, Unity package manifests)
+[[annotations]]
+path = ["engines/godot/project/**.tscn", "engines/unity/com.ugo9.runtime/package.json", "engines/unity/com.ugo9.runtime/**.asmdef"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "MIT"
+
+# the Photoshop panel's manifest (JSON can't carry a comment)
+[[annotations]]
+path = "plugins/photoshop/manifest.json"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "MIT"
+
+# documents and their pictures (guides, screenshots, diagrams) and the README: CC-BY-4.0 (the user's decision,
+# 2026-11-12). Listed by place, not docs/** as a whole, so what others provide or results from the user's own PC
+# (docs/進行/PC確認/...) are not covered. A file's own SPDX lines win (precedence "closest").
+[[annotations]]
+path = ["README.md", "docs/*.md", "docs/*.png", "docs/*.svg", "docs/チュートリアル/**", "docs/VTuber/**", "docs/進行/*.md", "docs/進行/点検_*/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 U5143"
+SPDX-License-Identifier = "CC-BY-4.0"

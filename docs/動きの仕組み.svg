@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" font-family="'Hiragino Sans','Yu Gothic UI','Noto Sans JP',sans-serif" font-size="14">
+  <rect width="880" height="400" fill="#fbfaf7"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5b3fa0"/></marker></defs>
+  <!-- the two work places -->
+  <rect x="16" y="16" width="560" height="368" rx="12" fill="#f1edfa" stroke="#cfc4ee"/>
+  <text x="32" y="42" font-size="15" font-weight="700" fill="#4a3590">組み立て（つまみの上で形を決める）</text>
+  <rect x="592" y="16" width="272" height="368" rx="12" fill="#eaf4ee" stroke="#bfdccb"/>
+  <text x="608" y="42" font-size="15" font-weight="700" fill="#1d6b47">アニメ（時間の上で動かす）</text>
+  <!-- 1 parts -->
+  <rect x="32" y="62" width="160" height="96" rx="8" fill="#fff" stroke="#bbb"/>
+  <text x="44" y="86" font-weight="700" fill="#23202b">① パーツ</text>
+  <text x="44" y="108" font-size="12.5" fill="#444">PSD のレイヤー 1 枚ずつ</text>
+  <text x="44" y="126" font-size="12.5" fill="#444">絵 ＋ メッシュ（三角形）</text>
+  <text x="44" y="144" font-size="12.5" fill="#444">頂点が動くと絵が曲がる</text>
+  <!-- 2 deformers -->
+  <rect x="216" y="62" width="344" height="96" rx="8" fill="#fff" stroke="#bbb"/>
+  <text x="228" y="86" font-weight="700" fill="#23202b">② 変形の仕組み（パーツを何で動かすか）</text>
+  <text x="228" y="108" font-size="12.5" fill="#444">骨：回す・動かす。頂点ごとのウェイトで付く</text>
+  <text x="228" y="126" font-size="12.5" fill="#444">ワープデフォーマ：点を動かして曲げる（入れ子も可）</text>
+  <text x="228" y="144" font-size="12.5" fill="#444">球・円柱：回る形を計算して、ワープデフォーマに焼く</text>
+  <line x1="192" y1="110" x2="214" y2="110" stroke="#5b3fa0" stroke-width="2" marker-end="url(#a)"/>
+  <!-- 3 parameters -->
+  <rect x="32" y="190" width="240" height="120" rx="8" fill="#fff" stroke="#5b3fa0" stroke-width="1.5"/>
+  <text x="44" y="214" font-weight="700" fill="#4a3590">③ パラメータ（つまみ）</text>
+  <text x="44" y="236" font-size="12.5" fill="#444">動きの量を表す数。例：AngleX</text>
+  <text x="44" y="254" font-size="12.5" fill="#444">−30（左）… 0 … ＋30（右）</text>
+  <!-- slider -->
+  <line x1="56" y1="284" x2="248" y2="284" stroke="#bbb" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="56" cy="284" r="6" fill="#1d7a4d"/><circle cx="152" cy="284" r="6" fill="#1d7a4d"/><circle cx="248" cy="284" r="6" fill="#1d7a4d"/>
+  <circle cx="200" cy="284" r="8" fill="#5b3fa0"/>
+  <text x="44" y="304" font-size="11" fill="#666"><tspan fill="#1d7a4d">●</tspan> キー　<tspan fill="#5b3fa0">●</tspan> 今の値（間はなめらか）</text>
+  <!-- 4 key forms -->
+  <rect x="296" y="190" width="264" height="120" rx="8" fill="#fff" stroke="#5b3fa0" stroke-width="1.5"/>
+  <text x="308" y="214" font-weight="700" fill="#4a3590">④ キーの形</text>
+  <text x="308" y="236" font-size="12.5" fill="#444">つまみがキーの値の時の、②の形</text>
+  <text x="308" y="254" font-size="12.5" fill="#444">（点の位置・骨の角度・頂点のずれ）</text>
+  <text x="308" y="272" font-size="12.5" fill="#444">つまみをキーに合わせて、形を直す</text>
+  <text x="308" y="290" font-size="12.5" fill="#444">2 つのつまみの角の形も持てる</text>
+  <line x1="272" y1="250" x2="294" y2="250" stroke="#5b3fa0" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="388" y1="158" x2="388" y2="188" stroke="#5b3fa0" stroke-width="2" marker-end="url(#a)"/>
+  <text x="396" y="178" font-size="11.5" fill="#5b3fa0">②を動かした形を記録</text>
+  <!-- 5 animation -->
+  <rect x="608" y="62" width="240" height="248" rx="8" fill="#fff" stroke="#1d7a4d" stroke-width="1.5"/>
+  <text x="620" y="86" font-weight="700" fill="#1d6b47">⑤ アニメ</text>
+  <text x="620" y="108" font-size="12.5" fill="#444">時間ごとに値を打つ</text>
+  <text x="620" y="126" font-size="12.5" fill="#444">・つまみ（③）の値</text>
+  <text x="620" y="144" font-size="12.5" fill="#444">・骨の角度・位置</text>
+  <text x="620" y="162" font-size="12.5" fill="#444">・不透明度・色</text>
+  <!-- timeline -->
+  <line x1="628" y1="196" x2="828" y2="196" stroke="#bbb" stroke-width="2"/>
+  <text x="620" y="190" font-size="11" fill="#666">AngleX</text>
+  <path d="M628 236 C668 196, 708 196, 728 216 S 788 256, 828 226" fill="none" stroke="#1d7a4d" stroke-width="2"/>
+  <rect x="624" y="232" width="8" height="8" fill="#1d7a4d" transform="rotate(45 628 236)"/>
+  <rect x="724" y="212" width="8" height="8" fill="#1d7a4d" transform="rotate(45 728 216)"/>
+  <rect x="824" y="222" width="8" height="8" fill="#1d7a4d" transform="rotate(45 828 226)"/>
+  <text x="620" y="270" font-size="11" fill="#666">0 秒　　　　　 1 秒　　　　　 2 秒</text>
+  <text x="620" y="292" font-size="12.5" fill="#444">つまみが動く → ④の形が出る</text>
+  <line x1="560" y1="250" x2="606" y2="250" stroke="#1d7a4d" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a)"/>
+  <!-- 6 sway -->
+  <rect x="32" y="330" width="816" height="40" rx="8" fill="#fff" stroke="#bbb"/>
+  <text x="44" y="355" font-weight="700" fill="#23202b">⑥ 物理・グルー</text>
+  <text x="170" y="355" font-size="12.5" fill="#444">物理のチェーン（髪・服の骨が遅れて揺れる）とグルー（つなぎ目を一緒に動かす）は、①〜⑤の後に自動でかかる</text>
+</svg>

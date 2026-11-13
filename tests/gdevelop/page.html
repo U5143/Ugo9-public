@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Ugo9 for GDevelop (build/gdevelop/Ugo9GDevelop.js) in PixiJS 7 (GDevelop 5's version), with stand-ins for the few
+     gdjs / scene calls it uses. Driven by tests/gdevelop_test.mjs. -->
+<meta charset="utf-8">
+<title>Ugo9 GDevelop test</title>
+<body style="margin:0">
+<script src="/build/gdevelop/pixi7/node_modules/pixi.js/dist/pixi.js"></script>
+<script>
+  const callbacks = [];
+  window.gdjs = { registerRuntimeScenePostEventsCallback: (f) => callbacks.push(f) };
+  const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0x203040, preserveDrawingBuffer: true });
+  document.body.appendChild(app.view);
+  app.ticker.stop();
+  const layerContainer = new PIXI.Container();
+  app.stage.addChild(layerContainer);
+  const camera = { x: 400, y: 300 };
+  // the layer's container shows the scene through the camera (position only)
+  const sync = () => layerContainer.position.set(400 - camera.x, 300 - camera.y);
+  window.runtimeScene = {
+    getGame: () => ({ getGameResolutionWidth: () => 800, getGameResolutionHeight: () => 600 }),
+    getLayer: () => ({ getRendererObject: () => layerContainer, getCameraX: () => camera.x, getCameraY: () => camera.y }),
+    getElapsedTime: () => 1000 / 60,
+  };
+  window.camera = camera;
+  window.step = (n) => { for (let i = 0; i < n; i++) { for (const f of callbacks) f(window.runtimeScene); sync(); app.renderer.render(app.stage); } };
+  window.pixel = (x, y) => { const gl = app.renderer.gl, p = new Uint8Array(4); gl.readPixels(x, 600 - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p); return Array.from(p); };
+  window.drawn = () => {
+    const gl = app.renderer.gl, p = new Uint8Array(800 * 600 * 4);
+    gl.readPixels(0, 0, 800, 600, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    let n = 0, sx = 0;
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - 0x20) + Math.abs(p[i + 1] - 0x30) + Math.abs(p[i + 2] - 0x40) > 30) { n++; sx += (i / 4) % 800; }
+    return { n, cx: n ? sx / n : 0 };
+  };
+  window.callbacks = callbacks;
+</script>
+<script src="/build/gdevelop/Ugo9GDevelop.js"></script>
+<script>window.loaded = true;</script>

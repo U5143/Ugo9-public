@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 in PixiJS</title>
+<script type="importmap">{ "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.22.0/dist/pixi.min.mjs" } }</script>
+</head><body>
+<div id="view"></div>
+<div id="panel"><h1>Ugo9 × PixiJS</h1></div>
+<script type="module">
+// Ugo9 in PixiJS: the sample character in a Pixi stage (web/ugo_pixi.js), with the shared panel.
+import * as PIXI from 'pixi.js';
+import { UgoRuntime, loadImage } from '../ugo.js';
+import { UgoLayer } from '../ugo_layer.js';
+import { UgoPixiLayer } from '../ugo_pixi.js';
+import { makePanel, PANEL_CSS } from './playground.js';
+
+document.head.append(Object.assign(document.createElement('style'), { textContent: PANEL_CSS }));
+const W = 640, H = 600;
+const rt = await UgoRuntime.load();
+const model = rt.loadModel(await (await fetch('../../samples/basic/model.ug9')).arrayBuffer());
+const atlas = await loadImage('../../samples/basic/atlas.png');
+
+const app = new PIXI.Application();
+await app.init({ width: W, height: H, background: '#e9e6dc', preference: 'webgl', antialias: true, preserveDrawingBuffer: true });
+document.getElementById('view').append(app.canvas);
+// something of Pixi's own behind the character, to show it is an ordinary sprite in the stage
+app.stage.addChild(new PIXI.Graphics().circle(W / 2, H * 0.42, 210).fill(0xd8d2c0));
+
+const layer = new UgoLayer(rt, { width: W, height: H });
+const kind = layer.addModel(model, [atlas]);
+const hero = layer.add(kind, { x: W / 2, y: H - 10, scale: (H - 20) / model.canvas[1] });
+const ugo = new UgoPixiLayer(PIXI, layer);
+app.stage.addChild(ugo.sprite);
+
+const panel = makePanel(document.getElementById('panel'), model);
+app.stage.eventMode = 'static';
+app.stage.hitArea = app.screen;
+app.stage.on('pointerdown', (e) => panel.showPick(ugo.pick(e.global.x, e.global.y)?.name ?? null));
+
+let seconds = 0;
+app.ticker.add((t) => {
+  const dt = Math.min(0.1, t.deltaMS / 1000);
+  seconds += dt;
+  hero.instance.reset();
+  panel.apply(hero.instance, dt, seconds);
+  ugo.update(dt);
+});
+window.ugoTest = { app, ugo, layer, hero, panel, model };
+window.ready = true;
+</script>
+</body></html>

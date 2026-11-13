@@ -1,0 +1,337 @@
+# SPDX-FileCopyrightText: 2026 U5143
+# SPDX-License-Identifier: MIT
+name: engines
+
+# Game engine builds and tests (docs/エンジン.md). Kept apart from ci.yml so
+# they run only when something they use changes. Like ci.yml: on pull
+# requests, on pushes to main and by hand (a push to a work branch alone does
+# not run it); the Windows / macOS builds (billed at 2x and 10x) on main and
+# by hand only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'engines/**'
+      - 'core/**'
+      - 'web/ugo.js'
+      - 'web/ugo.wasm'
+      - 'web/ugo_simd.wasm'
+      - 'samples/basic/**'
+      - 'tests/godot/**'
+      - 'tests/godot_test.mjs'
+      - 'tests/engine_scenes.mjs'
+      - 'tests/unity_*'
+      - 'tests/unity_*/**'
+      - 'tests/unreal_core/**'
+      - 'tests/unreal_core_test.mjs'
+      - 'tests/unreal_shader_check.py'
+      - 'tests/rpgmaker_mz/**'
+      - 'tests/rpgmaker_mz_test.mjs'
+      - 'tests/gamemaker/**'
+      - 'tests/gamemaker_test.mjs'
+      - 'tests/gdevelop/**'
+      - 'tests/gdevelop_test.mjs'
+      - 'tests/types/**'
+      - 'tests/web_types_test.mjs'
+      - 'web/*.d.ts'
+      - 'web/ugo_pixi.js'
+      - 'web/ugo_phaser.js'
+      - 'web/ugo_three.js'
+      - 'web/ugo_layer.js'
+      - 'tests/pose/**'
+      - 'tests/warp/**'
+      - 'tests/order/**'
+      - 'tests/future/**'
+      - 'tests/v11/**'
+      - 'tools/compile.mjs'
+      - 'tools/png.mjs'
+      - '.github/workflows/engines.yml'
+  pull_request:
+    paths:
+      - 'engines/**'
+      - 'core/**'
+      - 'web/ugo.js'
+      - 'web/ugo.wasm'
+      - 'web/ugo_simd.wasm'
+      - 'samples/basic/**'
+      - 'tests/godot/**'
+      - 'tests/godot_test.mjs'
+      - 'tests/engine_scenes.mjs'
+      - 'tests/unity_*'
+      - 'tests/unity_*/**'
+      - 'tests/unreal_core/**'
+      - 'tests/unreal_core_test.mjs'
+      - 'tests/unreal_shader_check.py'
+      - 'tests/rpgmaker_mz/**'
+      - 'tests/rpgmaker_mz_test.mjs'
+      - 'tests/gamemaker/**'
+      - 'tests/gamemaker_test.mjs'
+      - 'tests/gdevelop/**'
+      - 'tests/gdevelop_test.mjs'
+      - 'tests/types/**'
+      - 'tests/web_types_test.mjs'
+      - 'web/*.d.ts'
+      - 'web/ugo_pixi.js'
+      - 'web/ugo_phaser.js'
+      - 'web/ugo_three.js'
+      - 'web/ugo_layer.js'
+      - 'tests/pose/**'
+      - 'tests/warp/**'
+      - 'tests/order/**'
+      - 'tests/future/**'
+      - 'tests/v11/**'
+      - 'tools/compile.mjs'
+      - 'tools/png.mjs'
+      - '.github/workflows/engines.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  godot:
+    name: godot (GDExtension, compared with the Web runtime)
+    runs-on: ubuntu-latest
+    env:
+      GODOT_VERSION: 4.7.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: restore the godot-cpp build
+        id: godot-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/godot
+          key: godot-build-${{ runner.os }}-${{ hashFiles('engines/godot/CMakeLists.txt') }}-${{ hashFiles('engines/godot/src/**', 'engines/godot/shaders/**', 'core/**') }}
+          restore-keys: godot-build-${{ runner.os }}-${{ hashFiles('engines/godot/CMakeLists.txt') }}-
+      - name: build the extension
+        run: |
+          cmake -S engines/godot -B build/godot -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/godot --config Release -j 4
+      - name: save the godot-cpp build
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/godot
+          key: ${{ steps.godot-cache.outputs.cache-primary-key }}
+      - name: get Godot
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip -d "$RUNNER_TEMP/godot"
+          echo "GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Godot test
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+          node tests/godot_test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: godot-results
+          path: |
+            build/godot/*.png
+            build/godot/*.json
+            build/godot/*.log
+            engines/godot/project/addons/ugo9/bin/
+
+  godot-desktop:
+    if: github.event_name != 'pull_request'
+    name: godot extension (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            cmake_args: ""
+          - os: macos-latest
+            cmake_args: '"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: restore the godot-cpp build
+        id: godot-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/godot
+          key: godot-build-${{ runner.os }}-${{ hashFiles('engines/godot/CMakeLists.txt') }}-${{ hashFiles('engines/godot/src/**', 'engines/godot/shaders/**', 'core/**') }}
+          restore-keys: godot-build-${{ runner.os }}-${{ hashFiles('engines/godot/CMakeLists.txt') }}-
+      - name: build the extension
+        shell: bash
+        run: |
+          cmake -S engines/godot -B build/godot -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+          cmake --build build/godot --config Release -j 4
+          ls -l engines/godot/project/addons/ugo9/bin/
+      - name: save the godot-cpp build
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/godot
+          key: ${{ steps.godot-cache.outputs.cache-primary-key }}
+      - name: the library is where ugo9.gdextension expects it
+        shell: bash
+        run: |
+          for f in $(grep -oE 'res://addons/ugo9/bin/[^"]+' engines/godot/project/addons/ugo9/ugo9.gdextension); do
+            p="engines/godot/project/${f#res://}"
+            case "$f" in
+              *windows*x86_64*) [ "$RUNNER_OS" = Windows ] && { test -f "$p" || { echo "missing $p"; exit 1; }; } ;;
+              *macos*) [ "$RUNNER_OS" = macOS ] && { test -f "$p" || { echo "missing $p"; exit 1; }; } ;;
+            esac
+          done
+          echo ok
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ugo9-godot-${{ matrix.os }}
+          path: engines/godot/project/addons/ugo9/bin/
+
+  phones-web:
+    name: phones and the Web (Godot extension for Android and the Web, Unity core for Android)
+    runs-on: ubuntu-latest
+    env:
+      EMSDK_VERSION: 3.1.64 # the Emscripten Godot 4.4's web export templates are built with
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Godot extension for Android (arm64, x86_64)
+        run: |
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+          for abi in arm64-v8a x86_64; do
+            cmake -S engines/godot -B build/godot-android-$abi -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=$abi -DANDROID_PLATFORM=android-24
+            cmake --build build/godot-android-$abi --config Release -j 4
+          done
+      - name: get Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSDK_VERSION"
+      - name: Godot extension for the Web (with and without threads)
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S engines/godot -B build/godot-web -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/godot-web --config Release -j 4
+          emcmake cmake -S engines/godot -B build/godot-web-nothreads -DCMAKE_BUILD_TYPE=Release -DGODOTCPP_THREADS=OFF
+          cmake --build build/godot-web-nothreads --config Release -j 4
+      - name: the libraries are where ugo9.gdextension expects them
+        run: |
+          ls -l engines/godot/project/addons/ugo9/bin/
+          for f in $(grep -oE 'res://addons/ugo9/bin/[^"]+' engines/godot/project/addons/ugo9/ugo9.gdextension | grep -E 'android|web'); do
+            p="engines/godot/project/${f#res://}"
+            test -f "$p" || { echo "missing $p"; exit 1; }
+          done
+          head -c 4 engines/godot/project/addons/ugo9/bin/libugo9.web.template_release.wasm32.wasm | od -c | head -1 # \0asm
+          file engines/godot/project/addons/ugo9/bin/*android*
+      - name: Unity core for Android (arm64-v8a, armeabi-v7a)
+        run: |
+          ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME node engines/unity/build_plugin.mjs --android --abi arm64-v8a,armeabi-v7a
+          node engines/unity/build_plugin.mjs --sources
+          P=engines/unity/com.ugo9.runtime/Runtime/Plugins
+          file $P/Android/libs/*/libugo.so
+          # every function the C# side calls is exported, and the segments fit 16 KB pages
+          R=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          $R/llvm-nm -D --defined-only $P/Android/libs/arm64-v8a/libugo.so | grep -c ' T ugo_'
+          for fn in $(grep -oE 'extern [^(]+ (ugo_[a-z_0-9]+)\(' engines/unity/com.ugo9.runtime/Runtime/Core/Native.cs | grep -oE 'ugo_[a-z_0-9]+' | sort -u); do
+            $R/llvm-nm -D --defined-only $P/Android/libs/arm64-v8a/libugo.so | grep -q " T $fn\$" || { echo "not exported: $fn"; exit 1; }
+          done
+          $R/llvm-readelf -lW $P/Android/libs/arm64-v8a/libugo.so | awk '/LOAD/ { if ($NF != "0x4000" && $NF != "0x10000") { print "LOAD not 16 KB aligned: " $0; bad = 1 } } END { exit bad }'
+          ls $P/iOS/ugo9 $P/WebGL/ugo9
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ugo9-phones-web
+          path: |
+            engines/godot/project/addons/ugo9/bin/
+            engines/unity/com.ugo9.runtime/Runtime/Plugins/
+
+  unreal-core:
+    name: unreal (the plugin's core layer, without Unreal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: the core layer of the Unreal plugin, with the C core
+        run: node tests/unreal_core_test.mjs
+      - name: the plugin's shader compiles (HLSL, glslang)
+        run: |
+          sudo apt-get update && sudo apt-get install -y glslang-tools
+          python3 tests/unreal_shader_check.py
+
+  gamemaker:
+    name: gamemaker (the extension's native side with the C core, without GameMaker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: the extension's checks
+        run: node tests/gamemaker_test.mjs
+      - name: the library (Linux)
+        run: |
+          cmake -S engines/gamemaker/extension -B build/gamemaker/lib -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/gamemaker/lib --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamemaker-extension
+          path: |
+            build/gamemaker/lib/libugo9_gm.so
+            engines/gamemaker/gml
+            engines/gamemaker/shaders
+
+  rpgmaker-mz:
+    name: rpgmaker-mz (the RPG Maker MZ plugin in PixiJS 5 and Ugo9 for GDevelop in PixiJS 7, with stand-ins for the engines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: build the plugin and run it
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+          node tests/rpgmaker_mz_test.mjs
+          node tests/gdevelop_test.mjs
+          node tests/web_types_test.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpgmaker-mz-plugin
+          path: build/rpgmaker_mz/Ugo9.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdevelop-script
+          path: build/gdevelop/Ugo9GDevelop.js
+
+  unity:
+    name: unity (C# against the C core, compile and shader checks; the real check is on a PC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: build the shared core
+        run: |
+          cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Release -DUGO_SHARED=ON
+          cmake --build build/native -j 4 --target ugo_shared
+      - name: the package's core wrapper against the C core
+        run: LD_LIBRARY_PATH=$PWD/build/native dotnet run --project tests/unity_core -- $PWD
+      - name: the bench model maker (docs/比較_Live2D.md) makes a model
+        run: node engines/bench/make_model.mjs --out build/bench --parts 40 --vertices 2000 --params 20 --warps 6 --texture 256
+      - name: the character component against the C core (parameters, animation, update order)
+        run: LD_LIBRARY_PATH=$PWD/build/native dotnet run --project tests/unity_logic -- $PWD
+      - name: the package compiles (against stand-ins for Unity's API)
+        run: |
+          dotnet build tests/unity_compile
+          dotnet build tests/unity_compile -p:InputSystem=true   # as in Unity 6's templates (Input System only)
+      - name: the shader compiles (HLSL, glslang)
+        run: |
+          sudo apt-get update && sudo apt-get install -y glslang-tools
+          python3 tests/unity_shader_check.py

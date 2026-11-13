@@ -1,0 +1,19 @@
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Runs the Unity package's character logic (UgoCharacter: parameters, animation, placement, update order)
+       against the real C core, with stand-ins for Unity's API (../unity_compile/UnityStubs.cs). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../unity_compile/UnityStubs.cs" />
+    <Compile Include="../../engines/unity/com.ugo9.runtime/Runtime/**/*.cs" />
+  </ItemGroup>
+</Project>

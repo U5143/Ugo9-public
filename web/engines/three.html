@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 in three.js</title>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js" } }</script>
+</head><body>
+<div id="view"></div>
+<div id="panel"><h1>Ugo9 × three.js</h1></div>
+<script type="module">
+// Ugo9 in three.js: the sample character on a sheet in a 3D scene (web/ugo_three.js), with the shared panel.
+// Drag with the right mouse button to turn the camera a little; click the character to name the part.
+import * as THREE from 'three';
+import { UgoRuntime, loadImage } from '../ugo.js';
+import { UgoThreeCharacterFactory } from '../ugo_three.js';
+import { makePanel, PANEL_CSS } from './playground.js';
+
+document.head.append(Object.assign(document.createElement('style'), { textContent: PANEL_CSS }));
+const W = 640, H = 600;
+const rt = await UgoRuntime.load();
+const model = rt.loadModel(await (await fetch('../../samples/basic/model.ug9')).arrayBuffer());
+const atlas = await loadImage('../../samples/basic/atlas.png');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H);
+renderer.setClearColor(0xe9e6dc, 1);
+document.getElementById('view').append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 1));
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshBasicMaterial({ color: 0xd8d2c0 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const factory = new UgoThreeCharacterFactory(THREE, model, new THREE.Texture(atlas));
+const hero = factory.create({ metresPerPixel: 1.6 / model.canvas[1] }); // 1.6 m tall
+scene.add(hero);
+const camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 50);
+let yaw = 0;
+const placeCamera = () => { camera.position.set(Math.sin(yaw) * 3.4, 0.95, Math.cos(yaw) * 3.4); camera.lookAt(0, 0.8, 0); };
+placeCamera();
+
+const panel = makePanel(document.getElementById('panel'), model);
+const raycaster = new THREE.Raycaster();
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('pointermove', (e) => { if (e.buttons & 2) { yaw -= e.movementX * 0.005; placeCamera(); } });
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  panel.showPick(hero.partAt(raycaster));
+});
+
+let last = performance.now(), seconds = 0;
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now; seconds += dt;
+  hero.instance.reset();
+  panel.apply(hero.instance, dt, seconds);
+  hero.place();
+  hero.instance.update(dt);
+  hero.sync(renderer);
+  renderer.render(scene, camera);
+});
+window.ugoTest = { renderer, hero, panel, model, camera, raycaster };
+window.ready = true;
+</script>
+</body></html>

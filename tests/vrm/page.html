@@ -1,0 +1,132 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Ugo9 VRM test</title>
+<script type="importmap">
+{ "imports": {
+  "three": "/node_modules/three/build/three.module.js",
+  "three/addons/": "/node_modules/three/examples/jsm/",
+  "@pixiv/three-vrm": "/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+} }
+</script>
+<style>body { margin: 0; background: #fff; } canvas { display: inline-block; }</style>
+</head>
+<body>
+<canvas id="vrm" width="420" height="600"></canvas><canvas id="ugo" width="420" height="600"></canvas>
+<script type="module">
+// Harness for tests/vrm_test.mjs: the exported .vrm loaded by pixiv's three-vrm, compared
+// with the Ugo9 2D renderer for each expression.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+
+const BG = [0.95, 0.94, 0.92];
+const HEIGHT = 1.0; // export_vrm.mjs --height
+const rt = await UgoRuntime.load('/web/ugo.wasm');
+const q = new URLSearchParams(location.search); // ?vrm=/build/vrm/x.vrm&ugo=...: another export of the sample
+const model = rt.loadModel(await (await fetch(q.get('ugo') || '/samples/basic/model.ug9')).arrayBuffer());
+const [CW, CH, OX, OY] = model.canvas;
+const U = HEIGHT / CH;
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('vrm'), antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setClearColor(new THREE.Color().setRGB(...BG, THREE.SRGBColorSpace), 1);
+const loader = new GLTFLoader();
+loader.register((parser) => new VRMLoaderPlugin(parser));
+const gltf = await loader.loadAsync(q.get('vrm') || '/build/vrm/basic.vrm');
+const vrm = gltf.userData.vrm;
+const scene = new THREE.Scene();
+scene.add(vrm.scene);
+const front = new THREE.OrthographicCamera(-OX * U, (CW - OX) * U, OY * U, -(CH - OY) * U, -10, 10);
+
+const gl2 = document.getElementById('ugo').getContext('webgl2', { antialias: true, preserveDrawingBuffer: true, alpha: false });
+const ugoRenderer = new UgoRenderer(gl2, model, [await loadImage('/samples/basic/atlas.png')]);
+const ref = model.createInstance();
+const read = (gl, w, h) => { const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+
+const names = vrm.expressionManager.expressions.map((e) => e.expressionName);
+window.info = {
+  metaVersion: vrm.meta?.metaVersion,
+  name: vrm.meta?.name,
+  expressions: names,
+  humanBones: ['hips', 'spine', 'neck', 'head', 'leftUpperArm', 'rightHand', 'leftFoot'].filter((b) => vrm.humanoid.getRawBoneNode(b)),
+  springJoints: vrm.springBoneManager ? vrm.springBoneManager.joints.size : 0,
+  lookAt: vrm.lookAt ? vrm.lookAt.applier?.type || 'expression' : null,
+};
+
+// expression on the VRM vs parameter values in Ugo9
+window.compareExpression = (expr, params) => {
+  for (const n of names) vrm.expressionManager.setValue(n, 0);
+  if (expr) vrm.expressionManager.setValue(expr, 1);
+  vrm.expressionManager.update();
+  scene.updateMatrixWorld(true);
+  renderer.render(scene, front);
+  ref.reset();
+  for (const [k, v] of Object.entries(params)) ref.set(k, v);
+  ref.update(0);
+  ref.setTransform(1, 0, 0, 1, OX, OY);
+  gl2.viewport(0, 0, CW, CH); gl2.clearColor(...BG, 1); gl2.clear(gl2.COLOR_BUFFER_BIT);
+  ugoRenderer.draw([ref], CW, CH, 'gpu');
+  const a = read(renderer.getContext(), CW, CH), b = read(gl2, CW, CH);
+  let over = 0, max = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+    if (d > max) max = d; if (d > 16) over++;
+  }
+  return { max, over16: over, pixels: a.length / 4 };
+};
+
+// humanoid: turning the head bone turns the sheet (seen from the front, it gets narrower)
+window.turnHead = (deg) => {
+  for (const n of names) vrm.expressionManager.setValue(n, 0);
+  vrm.expressionManager.update();
+  const headBone = vrm.humanoid.getNormalizedBoneNode('head');
+  headBone.rotation.set(0, (deg * Math.PI) / 180, 0);
+  vrm.humanoid.update();
+  scene.updateMatrixWorld(true);
+  const cam = new THREE.PerspectiveCamera(30, CW / CH, 0.05, 50);
+  cam.position.set(0, 0.6, 2.2);
+  cam.lookAt(0, 0.6, 0);
+  renderer.render(scene, cam);
+  headBone.rotation.set(0, 0, 0);
+  vrm.humanoid.update();
+};
+
+// spring bones: move the body sideways and let the hair swing
+window.swing = () => {
+  const hair = vrm.scene.getObjectByName('hairL1');
+  const before = hair.getWorldQuaternion(new THREE.Quaternion());
+  let most = 0; // the largest swing while the body moves and comes to rest
+  for (let i = 0; i < 90; i++) {
+    vrm.scene.position.x = i < 20 ? i * 0.01 : 0.2;
+    vrm.update(1 / 60);
+    const now = hair.getWorldQuaternion(new THREE.Quaternion());
+    most = Math.max(most, 2 * Math.acos(Math.min(1, Math.abs(before.dot(now)))) * 180 / Math.PI);
+  }
+  vrm.scene.position.x = 0;
+  return most;
+};
+
+// the same move done to the Ugo9 character itself (its chains, format 0.6): the largest swing of a bone
+window.ugoSwing = (boneName) => {
+  const inst = model.createInstance(), b = Array.from({ length: model.boneCount }, (_, i) => rt.str(rt.ex.ugo_bone_name(model.ptr, i))).indexOf(boneName);
+  const ang = () => { const w = inst.boneWorld(b); return Math.atan2(w[1], w[0]); };
+  const pxPerM = model.canvas[1]; // export_vrm's default height: the canvas is 1 m tall
+  inst.reset(); inst.setTransform(1, 0, 0, 1, 0, 0); inst.update(0);
+  const before = ang();
+  let most = 0;
+  for (let i = 0; i < 90; i++) {
+    inst.reset(); inst.setTransform(1, 0, 0, 1, (i < 20 ? i * 0.01 : 0.2) * pxPerM, 0); inst.update(1 / 60);
+    most = Math.max(most, Math.abs(ang() - before) * 180 / Math.PI);
+  }
+  return most;
+};
+
+window.ready = true;
+</script>
+</body>
+</html>

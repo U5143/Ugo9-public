@@ -1,0 +1,208 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>glTF 検証：three.js と Ugo9</title>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+<style>body { margin: 0; background: #fff; } canvas { display: inline-block; }</style>
+</head>
+<body>
+<canvas id="three" width="420" height="600"></canvas><canvas id="ugo" width="420" height="600"></canvas>
+<script type="module">
+// Test harness for tests/gltf_test.mjs: draws the same pose with
+// (1) three.js playing the exported .glb, (2) three.js driven by the Ugo9 core,
+// (3) the Ugo9 WebGL2 renderer, and measures crowds of N characters.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+
+const BG = [0.95, 0.94, 0.92];
+const q = new URLSearchParams(location.search); // ?model=/build/spine/x/&glb=/build/x.glb to check other models
+const base = q.get('model') || '/samples/basic/';
+const rt = await UgoRuntime.load('/web/ugo.wasm');
+const model = rt.loadModel(await (await fetch(base + 'model.ug9')).arrayBuffer());
+const CW = Math.round(model.canvas[0]), CH = Math.round(model.canvas[1]), [, , OX, OY] = model.canvas;
+for (const id of ['three', 'ugo']) Object.assign(document.getElementById(id), { width: CW, height: CH });
+const UNIT = q.get('unit') ? Number(q.get('unit')) : 0.01, FPS = 30;
+
+// ---- three.js -----------------------------------------------------------------
+const threeCanvas = document.getElementById('three');
+const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setClearColor(new THREE.Color().setRGB(...BG, THREE.SRGBColorSpace), 1);
+const camera = new THREE.OrthographicCamera(-OX * UNIT, (CW - OX) * UNIT, OY * UNIT, -(CH - OY) * UNIT, -10, 10);
+camera.position.z = 5;
+const gltf = await new GLTFLoader().loadAsync(q.get('glb') || '/build/gltf/basic.glb');
+const scene = new THREE.Scene();
+scene.add(gltf.scene);
+const mixer = new THREE.AnimationMixer(gltf.scene);
+let skinned = null;
+gltf.scene.traverse((o) => { if (o.isSkinnedMesh) skinned = o; });
+const boneByName = new Map();
+gltf.scene.traverse((o) => { if (o.isBone) boneByName.set(o.name, o); });
+
+// ---- Ugo9 renderer ----------------------------------------------------------------
+const ugoCanvas = document.getElementById('ugo');
+const gl = ugoCanvas.getContext('webgl2', { antialias: true, preserveDrawingBuffer: true, alpha: false });
+const ugoRenderer = new UgoRenderer(gl, model, [await loadImage(base + model.textures[0])]);
+
+function read(glctx, w, h) {
+  const px = new Uint8Array(w * h * 4);
+  glctx.readPixels(0, 0, w, h, glctx.RGBA, glctx.UNSIGNED_BYTE, px);
+  return px;
+}
+function diff(a, b) {
+  let max = 0, sum = 0, over16 = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    let d = 0;
+    for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(a[i + c] - b[i + c]));
+    if (d > max) max = d;
+    sum += d;
+    if (d > 16) over16++;
+  }
+  return { max, mean: +(sum / (a.length / 4)).toFixed(3), over16, pixels: a.length / 4 };
+}
+
+// Ugo9 instance stepped exactly like the exporter bakes (one loop of warm-up, then 1/30 s steps)
+function ugoAtFrame(anim, frame) {
+  const inst = model.createInstance();
+  const ai = model.animationIndex.get(anim), dur = model.animations[ai].duration, dt = 1 / FPS;
+  for (let t = -dur; t < -1e-9; t += dt) { inst.reset(); inst.play(ai, t); inst.update(dt); }
+  for (let f = 0; f <= frame; f++) { inst.reset(); inst.play(ai, f / FPS); inst.update(dt); }
+  inst.setTransform(1, 0, 0, 1, OX, OY);
+  return inst;
+}
+function drawUgo(insts) {
+  gl.viewport(0, 0, CW, CH);
+  gl.clearColor(...BG, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  ugoRenderer.draw(insts, CW, CH, 'gpu');
+}
+
+// (1) baked animation played by three.js vs Ugo9
+window.compareBaked = (anim, frame) => {
+  mixer.stopAllAction();
+  const clip = gltf.animations.find((c) => c.name === anim);
+  const action = mixer.clipAction(clip);
+  action.play();
+  mixer.setTime(frame / FPS + Number(q.get("eps") || 0));
+  renderer.render(scene, camera);
+  drawUgo([ugoAtFrame(anim, frame)]);
+  const r = diff(read(renderer.getContext(), CW, CH), read(gl, CW, CH));
+  action.stop();
+  return r;
+};
+
+// (2) three.js driven live by the Ugo9 core (no baked animation): parameters -> weights -> three
+const driver = model.createInstance();
+const scratch = rt.alloc(32);
+const restQuat = new THREE.Quaternion();
+window.compareDriven = (params) => {
+  mixer.stopAllAction();
+  driver.reset(); driver.resetPhysics();
+  for (const [k, v] of Object.entries(params)) driver.set(k, v);
+  driver.update(0);
+  applyCoreToThree(driver, skinned, boneByName);
+  renderer.render(scene, camera);
+  driver.setTransform(1, 0, 0, 1, OX, OY);
+  drawUgo([driver]);
+  return diff(read(renderer.getContext(), CW, CH), read(gl, CW, CH));
+};
+function applyCoreToThree(inst, mesh, bones) {
+  const fr = inst.frame();
+  const nm = model.morphCount;
+  const names = mesh.geometry.userData.targetNames || mesh.userData.targetNames;
+  const infl = mesh.morphTargetInfluences, dict = mesh.morphTargetDictionary;
+  for (let i = 0; i < nm; i++) infl[i] = fr[model.morphOffset + i];
+  // visibility bones: hide parts whose opacity dropped below one half
+  for (const [name, bone] of bones) {
+    if (!name.startsWith('vis:')) continue;
+    const s = fr[model.opacityOffset + partIndex.get(name.slice(4))] >= 0.5 ? 1 : 1e-4;
+    bone.scale.set(s, s, 1);
+  }
+  for (let b = 0; b < model.boneCount; b++) {
+    rt.ex.ugo_bone_pose(inst.ptr, b, scratch);
+    const [x, y, rot, sx, sy] = rt.f32(scratch, 5);
+    const bone = bones.get(boneNames[b]);
+    bone.position.set(x * UNIT, -y * UNIT, 0);
+    bone.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -rot);
+    bone.scale.set(sx, sy, 1);
+  }
+  void names; void restQuat;
+}
+const boneNames = Array.from({ length: model.boneCount }, (_, i) => rt.str(rt.ex.ugo_bone_name(model.ptr, i)));
+const partIndex = new Map(Array.from({ length: model.partCount }, (_, i) => [rt.str(rt.ex.ugo_part_name(model.ptr, i)), i]));
+
+// (3) crowds: N characters, CPU time per frame
+window.benchThree = async (n, frames = 60, singlePass = false) => {
+  skinned.material.forceSinglePass = singlePass; // double-sided transparent materials draw twice by default
+  skinned.material.needsUpdate = true;
+  const group = new THREE.Group();
+  const mixers = [];
+  const s = Math.min(1, 1 / Math.ceil(Math.sqrt(n)));
+  const cols = Math.ceil(Math.sqrt(n));
+  for (let i = 0; i < n; i++) {
+    const c = SkeletonUtils.clone(gltf.scene);
+    c.scale.setScalar(s);
+    c.position.set(((i % cols) * CW * s - OX + OX * s) * UNIT, -(Math.floor(i / cols) * CH * s - OY + OY * s) * UNIT + (CH - OY) * 0 * UNIT, 0);
+    const m = new THREE.AnimationMixer(c);
+    m.clipAction(gltf.animations.find((a) => a.name === 'idle')).play();
+    m.setTime(i * 0.37);
+    mixers.push(m);
+    group.add(c);
+  }
+  scene.remove(gltf.scene);
+  scene.add(group);
+  let tUpdate = 0, tRender = 0;
+  for (let f = 0; f < frames; f++) {
+    const t0 = performance.now();
+    for (const m of mixers) m.update(1 / 60);
+    const t1 = performance.now();
+    renderer.render(scene, camera);
+    const t2 = performance.now();
+    if (f >= 10) { tUpdate += t1 - t0; tRender += t2 - t1; }
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  const calls = renderer.info.render.calls;
+  scene.remove(group);
+  scene.add(gltf.scene);
+  skinned.material.forceSinglePass = false;
+  return { n, singlePass, updateMs: +(tUpdate / (frames - 10)).toFixed(3), renderSubmitMs: +(tRender / (frames - 10)).toFixed(3), drawCalls: calls };
+};
+window.benchUgo = async (n, frames = 60) => {
+  const insts = Array.from({ length: n }, () => model.createInstance());
+  const s = Math.min(1, 1 / Math.ceil(Math.sqrt(n))), cols = Math.ceil(Math.sqrt(n));
+  insts.forEach((inst, i) => inst.setTransform(s, 0, 0, s, (i % cols) * CW * s + OX * s, Math.floor(i / cols) * CH * s + OY * s));
+  let tUpdate = 0, tRender = 0, calls = 0;
+  for (let f = 0; f < frames; f++) {
+    const t0 = performance.now();
+    insts.forEach((inst, i) => { inst.reset(); inst.play('idle', f / 60 + i * 0.37); inst.update(1 / 60); });
+    const t1 = performance.now();
+    gl.viewport(0, 0, CW, CH); gl.clearColor(...BG, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    calls = ugoRenderer.draw(insts, CW, CH, 'gpu').drawCalls;
+    const t2 = performance.now();
+    if (f >= 10) { tUpdate += t1 - t0; tRender += t2 - t1; }
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  return { n, updateMs: +(tUpdate / (frames - 10)).toFixed(3), renderSubmitMs: +(tRender / (frames - 10)).toFixed(3), drawCalls: calls };
+};
+
+window.info = {
+  three: THREE.REVISION,
+  morphTargets: (skinned.morphTargetInfluences || []).length,
+  bones: skinned.skeleton.bones.length,
+  animations: gltf.animations.map((a) => `${a.name}: ${a.tracks.length} tracks`),
+  materialType: skinned.material.type,
+  transparent: skinned.material.transparent,
+  depthWrite: skinned.material.depthWrite,
+};
+window.gltf = gltf; window.model = model; window.ugoAtFrame = ugoAtFrame; window.mixer = mixer;
+window.ready = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+// SPDX-FileCopyrightText: 2026 U5143
+// SPDX-License-Identifier: MIT
+// Ugo9 characters in Unreal (the same calculation as web/ugo.js and the Unity package's
+// Ugo9Character.shader): every vertex deformed from the model's tables and each character's
+// frame block. Drawn without a vertex buffer: the vertex number comes from Indices[SV_VertexID].
+// Stage 3: masks. MaskVS/MaskPS draw the mask parts of one character into its mask images (a
+// slice of a texture array per 4 channels, laid over the model's canvas, overlaps by max); MainPS
+// reads them. Up to 8 atlas pages; the blend function comes from the pipeline state.
+// Matrices are row-major and multiply row vectors, as everywhere in Unreal's shaders.
+#include "/Engine/Private/Common.ush"
+
+float4x4 WorldToClip;      // the view's (world space; precise near the world's origin)
+float UnitsPerPixel;       // Unreal units (cm) per model pixel
+uint SkinT, OpF, MorphF, ColorF, Stride, InstanceBase;
+float4 Canvas;             // the model's canvas: width, height, origin x, origin y (pixels)
+uint MaskGroups;           // mask slices per character (4 channels each; 0: the model has no masks)
+uint MaskGroup;            // the mask pass: which slice this draw writes
+
+StructuredBuffer<uint> Indices;      // the run's triangles (model vertex numbers)
+StructuredBuffer<float4> Positions;  // (x, y, u, v) per vertex
+StructuredBuffer<float4> Vertices;   // 4 per vertex
+StructuredBuffer<float4> Entries;    // (morph, dx, dy, 0)
+StructuredBuffer<float4> XWeights;   // (bone, weight, 0, 0)
+StructuredBuffer<float4> Parts;      // 2 per part
+StructuredBuffer<float4> Frames;     // Stride per character
+StructuredBuffer<float4> Depths;     // per character: (depth along the view's plane, 0, 0, 0)
+
+Texture2D Atlas0, Atlas1, Atlas2, Atlas3, Atlas4, Atlas5, Atlas6, Atlas7;
+SamplerState AtlasSampler;
+Texture2DArray Mask;       // the characters' mask images (a black dummy without masks)
+SamplerState MaskSampler;
+float4 AtlasAt(int i, float2 uv)
+{
+	return i == 0 ? Atlas0.Sample(AtlasSampler, uv) : i == 1 ? Atlas1.Sample(AtlasSampler, uv) : i == 2 ? Atlas2.Sample(AtlasSampler, uv)
+		: i == 3 ? Atlas3.Sample(AtlasSampler, uv) : i == 4 ? Atlas4.Sample(AtlasSampler, uv) : i == 5 ? Atlas5.Sample(AtlasSampler, uv)
+		: i == 6 ? Atlas6.Sample(AtlasSampler, uv) : Atlas7.Sample(AtlasSampler, uv);
+}
+
+#define UGO_PART_HIDDEN 2
+#define UGO_PART_SOLID 4
+#define UGO_BLEND_ADD 1
+
+float4 FrameTexel(int i) { return Frames[i]; }
+float FrameFloat(int baseTexel, int f)
+{
+	float4 v = FrameTexel(baseTexel + (f >> 2));
+	int c = f & 3;
+	return c == 0 ? v.x : (c == 1 ? v.y : (c == 2 ? v.z : v.w));
+}
+float2 Skin(int baseTexel, int bone, float2 p)
+{
+	int t = baseTexel + (int)SkinT + 2 * bone;
+	float4 m0 = FrameTexel(t), m1 = FrameTexel(t + 1);
+	return float2(m0.x * p.x + m0.z * p.y + m1.x, m0.y * p.x + m0.w * p.y + m1.y);
+}
+float2 WarpPoint(int t, int k) { float4 v = FrameTexel(t + (k >> 1)); return (k & 1) == 0 ? v.xy : v.zw; }
+float4 BSpline(float t) { float s = 1.0 - t, t2 = t * t, t3 = t2 * t; return float4(s * s * s, 4.0 - 6.0 * t2 + 3.0 * t3, 1.0 + 3.0 * t + 3.0 * t2 - 3.0 * t3, t3) / 6.0; }
+float4 BSplineD(float t) { float s = 1.0 - t, t2 = t * t; return float4(-0.5 * s * s, -2.0 * t + 1.5 * t2, 0.5 + t - 1.5 * t2, 0.5 * t2); }
+float2 WarpAt(int t, float2 size, float2 p)
+{
+	float2 q = clamp(p, 0.0, size), c = min(floor(q), size - 1.0), f = q - c, e = p - q;
+	float4 bu = BSpline(f.x), bv = BSpline(f.y), du = BSplineD(f.x), dv = BSplineD(f.y);
+	int w = (int)size.x + 3, k0 = (int)c.y * w + (int)c.x;
+	float2 o = 0;
+	for (int j = 0; j < 4; j++)
+		for (int i = 0; i < 4; i++)
+			o += (bu[i] * bv[j] + du[i] * bv[j] * e.x + bu[i] * dv[j] * e.y) * WarpPoint(t, k0 + j * w + i);
+	return o;
+}
+
+// a vertex of the run deformed: where it is in model pixels (y down), its part's info
+float2 Deform(uint VertexId, int instance, out int baseTexel, out float4 pinfo, out float2 uv)
+{
+	baseTexel = (int)(instance * Stride);
+	int vid = (int)Indices[VertexId];
+	float4 pu = Positions[vid];
+	float4 joints = Vertices[4 * vid], weights = Vertices[4 * vid + 1], info = Vertices[4 * vid + 2], xinfo = Vertices[4 * vid + 3];
+	int part = (int)info.x;
+	pinfo = Parts[2 * part];
+	float4 warp = Parts[2 * part + 1];
+	uv = pu.zw;
+
+	float2 p = pu.xy;
+	for (int e = 0; e < (int)info.z; e++)
+	{
+		float4 en = Entries[(int)info.y + e];
+		p += FrameFloat(baseTexel, (int)MorphF + (int)en.x) * en.yz;
+	}
+	float2 o = 0;
+	if (warp.x > 0) o = WarpAt(baseTexel + (int)warp.x - 1, warp.yz, p); // in a warp grid: no bones
+	else
+	{
+		for (int j = 0; j < 4; j++) if (weights[j] > 0) o += weights[j] * Skin(baseTexel, (int)joints[j], p);
+		for (int k = 0; k < (int)xinfo.y; k++)
+		{
+			float4 xw = XWeights[(int)xinfo.x + k];
+			o += xw.y * Skin(baseTexel, (int)xw.x, p);
+		}
+	}
+	return o;
+}
+
+// where a deformed point is on the mask images (0..1 over the canvas, v down like the texture)
+float2 MaskUV(float2 o) { return (o + Canvas.zw) / Canvas.xy; }
+
+void MainVS(
+	uint VertexId : SV_VertexID,
+	uint InstanceId : SV_InstanceID,
+	out float4 OutPosition : SV_POSITION,
+	out float2 OutUV : TEXCOORD0,
+	out float OutOpacity : TEXCOORD1,
+	out nointerpolation float4 OutInfo : TEXCOORD2,
+	out nointerpolation float3 OutX : TEXCOORD3,
+	out nointerpolation float3 OutY : TEXCOORD4,
+	out float3 OutMask : TEXCOORD5)
+{
+	uint instance = InstanceId + InstanceBase;
+	int baseTexel;
+	float4 pinfo;
+	float2 uv;
+	float2 o = Deform(VertexId, (int)instance, baseTexel, pinfo, uv);
+	int part = (int)Vertices[4 * (int)Indices[VertexId] + 2].x;
+	int bits = (int)pinfo.z;
+	float opacity = FrameFloat(baseTexel, (int)OpF + part);
+	if ((bits & UGO_PART_HIDDEN) != 0) opacity = 0; // hidden: only a mask
+	float3 x = 1, y = 0;
+	if (pinfo.w > 0)
+	{
+		int c = (int)(ColorF >> 2) + 2 * ((int)pinfo.w - 1);
+		x = FrameTexel(baseTexel + c).xyz;
+		y = FrameTexel(baseTexel + c + 1).xyz;
+	}
+	// placement (in the frame block), the whole character's colour (header floats 6, 7)
+	float4 x0 = FrameTexel(baseTexel), x1 = FrameTexel(baseTexel + 1);
+	float dark = x1.z, dr = floor(dark / 65536.0), dg = floor((dark - dr * 65536.0) / 256.0);
+	float3 tint = 1.0 - float3(dr, dg, dark - dr * 65536.0 - dg * 256.0) / 255.0;
+	x *= tint; y *= tint;
+	opacity *= 1.0 - x1.w;
+	float2 placed = float2(x0.x * o.x + x0.z * o.y + x1.x, x0.y * o.x + x0.w * o.y + x1.y);
+	// model pixels (y down) on the plane: x along world X, y along world -Z, at the character's depth along Y
+	float3 world = float3(placed.x * UnitsPerPixel, Depths[instance].x, -placed.y * UnitsPerPixel);
+	OutPosition = opacity > 0 ? mul(float4(world, 1), WorldToClip) : float4(2, 2, 2, 1);
+	OutUV = uv;
+	OutMask = float3(MaskUV(o), instance * MaskGroups);
+	OutOpacity = opacity;
+	OutInfo = pinfo;
+	OutX = x;
+	OutY = y;
+}
+
+void MainPS(
+	float4 SvPosition : SV_POSITION,
+	float2 UV : TEXCOORD0,
+	float Opacity : TEXCOORD1,
+	nointerpolation float4 Info : TEXCOORD2,
+	nointerpolation float3 X : TEXCOORD3,
+	nointerpolation float3 Y : TEXCOORD4,
+	float3 MaskAt : TEXCOORD5,
+	out float4 OutColor : SV_Target0)
+{
+	float4 c = AtlasAt(min(((int)Info.z) >> 16, 7), UV); // premultiplied (UUgoModelAsset makes it so)
+	c.rgb = c.rgb * X + c.a * Y;
+	float k = Opacity;
+	int read = (int)Info.y;
+	if ((read & 32) != 0) // drawn only inside (or, inverted, outside) its mask
+	{
+		int ch = read & 15;
+		float4 m = Mask.Sample(MaskSampler, float3(MaskAt.xy, MaskAt.z + (ch >> 2)));
+		int cc = ch & 3;
+		float mv = cc == 0 ? m.x : (cc == 1 ? m.y : (cc == 2 ? m.z : m.w));
+		k *= (read & 16) != 0 ? 1.0 - mv : mv;
+	}
+	c *= k;
+	if ((((int)Info.z >> 8) & 255) == UGO_BLEND_ADD) c.a = 0; // add: rgb = s + d, alpha unchanged
+	// multiply and screen: the pass's blend state does the rest (as in every Ugo9 runtime)
+	OutColor = c;
+}
+
+// the mask pass: one character's mask parts on its canvas (render target: its slice MaskGroup)
+void MaskVS(
+	uint VertexId : SV_VertexID,
+	uint InstanceId : SV_InstanceID,
+	out float4 OutPosition : SV_POSITION,
+	out float2 OutUV : TEXCOORD0,
+	out nointerpolation float4 OutInfo : TEXCOORD2)
+{
+	int baseTexel;
+	float4 pinfo;
+	float2 uv;
+	float2 o = Deform(VertexId, (int)(InstanceId + InstanceBase), baseTexel, pinfo, uv);
+	float2 m = MaskUV(o);
+	OutPosition = float4(m.x * 2 - 1, 1 - m.y * 2, 0.5, 1); // masks ignore opacity (hidden parts are masks too)
+	OutUV = uv;
+	OutInfo = pinfo;
+}
+
+void MaskPS(
+	float4 SvPosition : SV_POSITION,
+	float2 UV : TEXCOORD0,
+	nointerpolation float4 Info : TEXCOORD2,
+	out float4 OutColor : SV_Target0)
+{
+	int bits = (int)Info.z;
+	float a = (bits & UGO_PART_SOLID) != 0 ? 1.0 : AtlasAt(min(bits >> 16, 7), UV).a; // solid: the whole mesh
+	int w = (int)Info.x >> (4 * MaskGroup);
+	OutColor = float4(w & 1, (w >> 1) & 1, (w >> 2) & 1, (w >> 3) & 1) * a;
+}

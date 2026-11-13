@@ -1,0 +1,9 @@
+{
+  "name": "Ugo9.Runtime",
+  "rootNamespace": "Ugo9",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "autoReferenced": true
+}

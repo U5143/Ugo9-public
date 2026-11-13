@@ -1,0 +1,18 @@
+; SPDX-FileCopyrightText: 2026 U5143
+; SPDX-License-Identifier: MIT
+[configuration]
+
+entry_symbol = "ugo9_library_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+
+linux.x86_64 = "res://addons/ugo9/bin/libugo9.linux.template_release.x86_64.so"
+linux.arm64 = "res://addons/ugo9/bin/libugo9.linux.template_release.arm64.so"
+windows.x86_64 = "res://addons/ugo9/bin/libugo9.windows.template_release.x86_64.dll"
+windows.arm64 = "res://addons/ugo9/bin/libugo9.windows.template_release.arm64.dll"
+macos = "res://addons/ugo9/bin/libugo9.macos.template_release.universal.dylib"
+android.arm64 = "res://addons/ugo9/bin/libugo9.android.template_release.arm64.so"
+android.x86_64 = "res://addons/ugo9/bin/libugo9.android.template_release.x86_64.so"
+web.wasm32 = "res://addons/ugo9/bin/libugo9.web.template_release.wasm32.wasm"
+web.wasm32.nothreads = "res://addons/ugo9/bin/libugo9.web.template_release.wasm32.nothreads.wasm"

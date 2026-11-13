@@ -1,0 +1,10 @@
+{
+  "format": "ugo9-expressions",
+  "version": 1,
+  "expressions": [
+    { "id": "smile", "fadeIn": 0.3, "fadeOut": 0.4, "params": { "EyeOpenL": ["multiply", 0.55], "EyeOpenR": ["multiply", 0.55], "BrowY": ["set", 0.5] } },
+    { "id": "angry", "fadeIn": 0.2, "fadeOut": 0.4, "params": { "BrowY": ["set", -1], "EyeOpenL": ["multiply", 0.8], "EyeOpenR": ["multiply", 0.8] } },
+    { "id": "surprised", "fadeIn": 0.1, "fadeOut": 0.5, "params": { "BrowY": ["set", 1], "MouthOpen": ["add", 0.4] } },
+    { "id": "blush", "fadeIn": 0.6, "fadeOut": 0.8, "params": { "FaceColor": ["set", 1] } }
+  ]
+}

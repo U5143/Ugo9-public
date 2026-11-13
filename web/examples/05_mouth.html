@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 の例：口（音の大きさで）</title>
+<style>body{margin:0;font:14px system-ui,sans-serif;background:#f4f4f6;color:#222}main{max-width:640px;margin:0 auto;padding:16px}canvas{width:100%;max-width:420px;aspect-ratio:420/600;display:block;margin:12px auto;background:#fff;border-radius:8px}p{line-height:1.6}#out{min-height:1.5em;text-align:center}</style>
+<script>/* opened straight from the disk the browser loads no modules: say what to do */ if (location.protocol === 'file:') addEventListener('DOMContentLoaded', function () { var o = document.getElementById('out') || document.querySelector('main'); var p = document.createElement('p'); p.style.color = '#b4502a'; p.textContent = 'ファイルを直接開くと、ブラウザが芯（WASM）とモデルを読ませません。リポジトリのフォルダで node tools/serve.mjs（か npx serve など、どの静的なサーバーでも）を動かし、http://localhost:…/web/examples/ を開いてください。'; o.appendChild(p); });</script>
+</head><body><main>
+<h1>口（音の大きさで）</h1>
+<p>UgoMouth：音の大きさ（0〜1）で口を開く。開く時は速く、閉じる時はゆっくり。マイクのボタンで本物の声に。</p>
+<canvas id="c" width="420" height="600"></canvas>
+<div id="out"></div>
+<p><a href="./">例の一覧</a> ・ 関数は docs/芯のAPI.md</p>
+</main>
+<script type="module">
+import { start } from './common.js';
+import { UgoMouth } from '../ugo.js';
+const { model, inst, loop } = await start(document.getElementById('c'));
+const mouth = new UgoMouth(model);
+const out = document.getElementById('out'), b = document.createElement('button');
+b.textContent = 'マイクを使う'; out.append(b);
+let level = () => 0.5 + 0.5 * Math.sin(performance.now() / 120); // until the microphone is on: a made-up level
+b.onclick = async () => {
+  const ctx = new AudioContext(), src = ctx.createMediaStreamSource(await navigator.mediaDevices.getUserMedia({ audio: true }));
+  const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
+  const buf = new Float32Array(an.fftSize);
+  level = () => { an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) s += v * v; return Math.min(1, Math.sqrt(s / buf.length) * 8); };
+  b.disabled = true;
+};
+loop((dt, t) => { inst.play(0, t); mouth.level = level(); mouth.update(dt); mouth.apply(inst); });
+</script>
+</body></html>

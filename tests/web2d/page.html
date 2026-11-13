@@ -1,0 +1,166 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html><head><meta charset="utf-8"><title>Ugo9 in PixiJS and Phaser</title></head>
+<body style="margin:0">
+<div id="host"></div>
+<script type="module">
+import * as PIXI from '/node_modules/pixi.js/dist/pixi.mjs';
+import Phaser from '/node_modules/phaser/dist/phaser.esm.js';
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+import { UgoLayer, UgoSpriteSheet } from '/web/ugo_layer.js';
+import { UgoPixiLayer } from '/web/ugo_pixi.js';
+import { UgoPhaserLayer } from '/web/ugo_phaser.js';
+
+const W = 480, H = 360, BG = [0.93, 0.92, 0.89];
+const rt = await UgoRuntime.load();
+const model = rt.loadModel(await (await fetch('/samples/basic/model.ug9')).arrayBuffer());
+const atlas = await loadImage('/samples/basic/atlas.png');
+const place = { x: 240, y: 350, scale: 0.55 };
+const pose = (inst) => { inst.reset(); inst.play('idle', 1.3); inst.set('AngleX', 18); inst.set('HeadTurnX', 18); }; // (either name: the model has one)
+
+// what the plain 2D renderer draws over the background
+function reference() {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const gl = c.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: true });
+  const r = new UgoRenderer(gl, model, [atlas]);
+  const inst = model.createInstance();
+  pose(inst);
+  inst.setTransform(place.scale, 0, 0, place.scale, place.x, place.y);
+  inst.update(0);
+  gl.viewport(0, 0, W, H); gl.clearColor(...BG, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  r.draw([inst], W, H);
+  return pixels(c);
+}
+function pixels(canvas) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); g.drawImage(canvas, 0, 0, W, H);
+  return g.getImageData(0, 0, W, H).data;
+}
+function compare(a, b) {
+  let max = 0, over = 0, drawn = 0;
+  const bg = BG.map((v) => Math.round(v * 255));
+  for (let i = 0; i < a.length; i += 4) {
+    if (Math.abs(b[i] - bg[0]) + Math.abs(b[i + 1] - bg[1]) + Math.abs(b[i + 2] - bg[2]) > 6) drawn++;
+    const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+    if (d > max) max = d; if (d > 24) over++;
+  }
+  return { max, over, drawn };
+}
+const ref = reference();
+
+window.pixi = async () => {
+  const app = new PIXI.Application();
+  await app.init({ width: W, height: H, background: new PIXI.Color(BG), preference: 'webgl', preserveDrawingBuffer: true, antialias: true, autoStart: false });
+  document.getElementById('host').appendChild(app.canvas);
+  const layer = new UgoLayer(rt, { width: W, height: H });
+  const kind = layer.addModel(model, [atlas]);
+  const hero = layer.add(kind, place);
+  const ugo = new UgoPixiLayer(PIXI, layer);
+  app.stage.addChild(ugo.sprite);
+  pose(hero.instance);
+  ugo.update(0);
+  app.renderer.render(app.stage);
+  const same = compare(pixels(app.canvas), ref);
+  // a Pixi sprite above the layer hides the character where it is (the layer is an ordinary sprite)
+  const box = new PIXI.Graphics().rect(200, 120, 80, 60).fill(0x2266cc);
+  app.stage.addChild(box);
+  pose(hero.instance);
+  ugo.update(0);
+  app.renderer.render(app.stage);
+  const p = pixels(app.canvas), k = 4 * (150 * W + 240);
+  const covered = [p[k], p[k + 1], p[k + 2]];
+  const picked = ugo.pick(240, 350 - 330 * 0.55)?.name ?? null;
+  const out = { same, covered, picked, drawCalls: layer.stats.drawCalls };
+  app.destroy(true);
+  return out;
+};
+
+// a sprite per character (UgoSpriteSheet): the same picture, and the engine's own objects can go between characters
+window.pixiSheet = async () => {
+  const app = new PIXI.Application();
+  await app.init({ width: W, height: H, background: new PIXI.Color(BG), preference: 'webgl', preserveDrawingBuffer: true, antialias: true, autoStart: false });
+  document.getElementById('host').appendChild(app.canvas);
+  const sheet = new UgoSpriteSheet(rt);
+  const kind = sheet.addModel(model, [atlas]);
+  const a = sheet.add(kind, { scale: place.scale }), b = sheet.add(kind, { scale: place.scale });
+  const ugo = new UgoPixiLayer(PIXI, sheet);
+  const sa = ugo.spriteFor(a), sb = ugo.spriteFor(b);
+  sa.position.set(place.x, place.y);
+  app.stage.addChild(sa);
+  pose(a.instance); pose(b.instance);
+  ugo.update(0);
+  app.renderer.render(app.stage);
+  const same = compare(pixels(app.canvas), ref);
+  // a box above a's face, and b (added after the box) on the right: b's face is not covered
+  const faceY = Math.round(place.y - 330 * place.scale);
+  app.stage.addChild(new PIXI.Graphics().rect(0, faceY - 30, W, 60).fill(0x2266cc));
+  sb.position.set(place.x + 150, place.y);
+  app.stage.addChild(sb);
+  pose(a.instance); pose(b.instance);
+  ugo.update(0);
+  app.renderer.render(app.stage);
+  const p = pixels(app.canvas), at = (x, y) => { const k = 4 * (y * W + x); return [p[k], p[k + 1], p[k + 2]]; };
+  const out = { same, aFace: at(place.x, faceY), bFace: at(place.x + 150, faceY), picked: sheet.pickIn(a, a.frame.anchorX * a.frame.width, a.frame.anchorY * a.frame.height - 330 * place.scale), drawCalls: sheet.stats.drawCalls };
+  app.destroy(true);
+  return out;
+};
+
+window.phaser = () => new Promise((resolve) => {
+  let frames = 0, ugo, hero, layer;
+  const game = new Phaser.Game({
+    type: Phaser.WEBGL, width: W, height: H, backgroundColor: '#edebe3', parent: 'host',
+    render: { preserveDrawingBuffer: true, antialias: true }, banner: false, audio: { noAudio: true },
+    scene: {
+      create() {
+        layer = new UgoLayer(rt, { width: W, height: H });
+        const kind = layer.addModel(model, [atlas]);
+        hero = layer.add(kind, place);
+        ugo = new UgoPhaserLayer(this, layer);
+      },
+      update() {
+        pose(hero.instance);
+        ugo.update(0);
+        if (++frames === 4) {
+          setTimeout(() => {
+            const same = compare(pixels(game.canvas), ref);
+            const picked = ugo.pick(240, 350 - 330 * 0.55)?.name ?? null;
+            game.destroy(true);
+            resolve({ same, picked });
+          }, 50);
+        }
+      },
+    },
+  });
+});
+window.phaserSheet = () => new Promise((resolve) => {
+  let frames = 0, ugo, a, sheet;
+  const game = new Phaser.Game({
+    type: Phaser.WEBGL, width: W, height: H, backgroundColor: '#edebe3', parent: 'host',
+    render: { preserveDrawingBuffer: true, antialias: true }, banner: false, audio: { noAudio: true },
+    scene: {
+      create() {
+        sheet = new UgoSpriteSheet(rt);
+        const kind = sheet.addModel(model, [atlas]);
+        a = sheet.add(kind, { scale: place.scale });
+        ugo = new UgoPhaserLayer(this, sheet);
+        ugo.image.setVisible(false);
+        ugo.imageFor(a, place.x, place.y);
+      },
+      update() {
+        pose(a.instance);
+        ugo.update(0);
+        if (++frames === 4) {
+          setTimeout(() => {
+            const same = compare(pixels(game.canvas), ref);
+            game.destroy(true);
+            resolve({ same });
+          }, 50);
+        }
+      },
+    },
+  });
+});
+window.ready = true;
+</script>
+</body></html>

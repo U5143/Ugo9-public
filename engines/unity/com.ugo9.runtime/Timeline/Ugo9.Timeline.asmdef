@@ -1,0 +1,13 @@
+{
+  "name": "Ugo9.Timeline",
+  "rootNamespace": "Ugo9",
+  "references": ["Ugo9.Runtime", "Unity.Timeline"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "autoReferenced": true,
+  "defineConstraints": ["UGO9_TIMELINE"],
+  "versionDefines": [
+    { "name": "com.unity.timeline", "expression": "1.6.0", "define": "UGO9_TIMELINE" }
+  ]
+}

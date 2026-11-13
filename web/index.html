@@ -1,0 +1,374 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 デモ</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #23202b; --muted: #6d6878; --line: #e2dccf;
+    --accent: #5b3fa0; --accent-ink: #ffffff; --good: #1d7a4d; --warn: #b4502a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17151c; --panel: #211e28; --ink: #ece8f4; --muted: #a39db0; --line: #353040; --accent: #a58ce6; --accent-ink: #17151c; --good: #6fd3a0; --warn: #f0a07a; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  main { display: grid; grid-template-columns: 1fr 340px; height: 100%; }
+  #stage { position: relative; min-height: 0; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #error { position: absolute; inset: 16px; display: none; color: var(--warn); }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 16px 18px 32px; }
+  h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: .02em; }
+  .lead { color: var(--muted); margin: 0 0 14px; font-size: 13px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 8px; font-weight: 600; }
+  label { display: block; margin: 6px 0; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row > span { flex: 0 0 auto; }
+  .row > select { flex: 1; min-width: 0; }
+  select, input[type=number], button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); cursor: pointer; padding: 6px 14px; }
+  button { cursor: pointer; }
+  dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-variant-numeric: tabular-nums; }
+  dl.stats dt { color: var(--muted); }
+  dl.stats dd { margin: 0; text-align: right; }
+  .big { font-size: 18px; font-weight: 600; }
+  .note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .param { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 6px; font-size: 12px; }
+  .param.pinned span:first-child { color: var(--accent); font-weight: 600; }
+  .param output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  #exportLink { display: none; margin-top: 8px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 55vh auto; height: auto; }
+    #stage { height: 55vh; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="stage"><canvas id="view"></canvas><div id="error"></div></div>
+  <aside>
+    <h1>Ugo9</h1>
+    <p class="lead">毎フレーム CPU が渡すのは1体あたり数百バイトだけ。頂点の変形は GPU が行い、全キャラを1回で描きます。</p>
+
+    <h2>表示</h2>
+    <label class="row"><span>変形の方式</span>
+      <select id="mode">
+        <option value="gpu">GPU で変形（Ugo9）</option>
+        <option value="cpu">CPU で変形（Live2D・Spine 型、比較用）</option>
+      </select>
+    </label>
+    <label class="row"><span>キャラの数</span><input type="range" id="count" min="0" max="100" value="0"><output id="countOut">1</output></label>
+    <label class="row"><span>アニメーション</span><select id="anim"></select></label>
+    <label class="row"><input type="checkbox" id="follow" checked><span>マウスに顔を向ける</span></label>
+
+    <h2>計測</h2>
+    <dl class="stats">
+      <dt>FPS</dt><dd class="big" id="sFps">–</dd>
+      <dt>CPU：パラメータ→重み</dt><dd id="sUpdate">–</dd>
+      <dt>CPU：頂点の変形</dt><dd id="sDeform">–</dd>
+      <dt>CPU：描画の命令</dt><dd id="sSubmit">–</dd>
+      <dt>描画の回数</dt><dd id="sDraws">–</dd>
+      <dt>GPU への転送</dt><dd id="sUpload">–</dd>
+      <dt>頂点の数</dt><dd id="sVerts">–</dd>
+    </dl>
+    <p class="note">「CPU で変形」に切り替えると、頂点の数とキャラの数に比例して CPU の時間と転送量が増えます。</p>
+
+    <h2>パラメータ</h2>
+    <div id="params"></div>
+    <div class="row" style="margin-top:6px"><button id="unpin">手で動かした値を戻す</button></div>
+    <p class="note">スライダーを動かした値は、アニメーションより優先されます。</p>
+
+    <h2>書き出し</h2>
+    <label class="row"><span>形式</span>
+      <select id="exFormat"><option value="gif">GIF</option><option value="apng">APNG</option></select>
+    </label>
+    <label class="row"><span>大きさ</span>
+      <select id="exScale"><option value="0.5">× 0.5</option><option value="0.75" selected>× 0.75</option><option value="1">× 1</option></select>
+    </label>
+    <label class="row"><span>背景</span><input type="checkbox" id="exBgOn" checked><input type="color" id="exBg" value="#f4f1ea"><span class="note" style="margin:0">（外すと透明）</span></label>
+    <label class="row"><span>秒数</span><input type="number" id="exSeconds" min="0.5" max="20" step="0.5" value="6" style="width:72px"><span>fps</span><input type="number" id="exFps" min="5" max="60" value="30" style="width:60px"></label>
+    <div class="row"><button class="primary" id="exGo">書き出す</button><span id="exStatus" class="note" style="margin:0"></span></div>
+    <a id="exportLink"></a>
+
+    <h2>モデルを開く</h2>
+    <input type="file" id="open" accept=".ug9,.ugo,.png" multiple>
+    <p class="note">.ug9（前の名前の .ugo も可）とアトラスの PNG を一緒に選びます。</p>
+  </aside>
+</main>
+
+<script type="module">
+import { UgoRuntime, UgoRenderer, loadImage } from './ugo.js';
+import { encodeGIF, encodeAPNG } from './encoders.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('view');
+const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: true, alpha: false });
+const state = { mode: 'gpu', count: 1, anim: '', follow: true, pinned: new Map(), mouse: null, frozen: false }; // frozen: keep the current pose (tests)
+let rt, model, renderer, instances = [], smooth = new Map();
+
+function fail(msg) { $('error').style.display = 'block'; $('error').textContent = msg; }
+if (!gl) fail('この端末のブラウザは WebGL2 に対応していません。');
+
+async function openModel(modelBytes, atlasImages) {
+  rt = await UgoRuntime.load(); // a fresh wasm heap per model
+  model = rt.loadModel(modelBytes);
+  renderer = new UgoRenderer(gl, model, atlasImages);
+  instances = [];
+  state.pinned.clear();
+  buildParamUI();
+  const sel = $('anim');
+  sel.innerHTML = '<option value="">なし</option>' + model.animations.map((a) => `<option>${a.name}</option>`).join('');
+  state.anim = model.animations.find((a) => a.name === 'idle')?.name ?? (model.animations[0]?.name || '');
+  sel.value = state.anim;
+  $('exSeconds').value = (model.animations.find((a) => a.name === state.anim)?.duration || 3).toFixed(1);
+  syncInstances();
+}
+
+function syncInstances() {
+  while (instances.length < state.count) {
+    const inst = model.createInstance();
+    inst.offset = instances.length ? Math.random() * 6 : 0;
+    instances.push(inst);
+  }
+  instances.length = state.count;
+}
+
+function buildParamUI() {
+  const box = $('params');
+  box.innerHTML = '';
+  model.params.forEach((p, i) => {
+    const row = document.createElement('label');
+    row.className = 'param';
+    const step = (p.max - p.min) / 200;
+    row.innerHTML = `<span>${p.name}</span><input type="range" min="${p.min}" max="${p.max}" step="${step}" value="${p.def}"><output>${p.def.toFixed(2)}</output>`;
+    const input = row.querySelector('input'), out = row.querySelector('output');
+    input.addEventListener('input', () => {
+      state.pinned.set(i, Number(input.value));
+      row.classList.add('pinned');
+      out.textContent = Number(input.value).toFixed(2);
+    });
+    row.dataset.index = i;
+    box.appendChild(row);
+  });
+}
+$('unpin').onclick = () => {
+  state.pinned.clear();
+  document.querySelectorAll('.param').forEach((r) => r.classList.remove('pinned'));
+};
+
+// ---- layout: a grid of characters filling the canvas ------------------------
+function layout(w, h) {
+  const [cw, ch, ox, oy] = model.canvas, n = instances.length;
+  const cols = Math.max(1, Math.round(Math.sqrt((n * w * ch) / (h * cw))));
+  const rows = Math.ceil(n / cols);
+  const s = Math.min(w / (cols * cw), h / (rows * ch)) * (n === 1 ? 0.92 : 1);
+  const gx = (w - cols * cw * s) / 2, gy = (h - rows * ch * s) / 2;
+  instances.forEach((inst, i) => {
+    const x = gx + (i % cols) * cw * s, y = gy + Math.floor(i / cols) * ch * s;
+    inst.setTransform(s, 0, 0, s, x + ox * s, y + oy * s);
+    inst.head = [x + ox * s, y + (oy - 420) * s];
+    inst.scale = s;
+  });
+}
+
+function applyFollow(inst, dt, w, h) {
+  let tx = 0, ty = 0;
+  if (state.follow && state.mouse) {
+    tx = Math.max(-1, Math.min(1, (state.mouse[0] - inst.head[0]) / (w * 0.35)));
+    ty = Math.max(-1, Math.min(1, (state.mouse[1] - inst.head[1]) / (h * 0.35)));
+  }
+  let sm = smooth.get(inst);
+  if (!sm) { sm = [0, 0]; smooth.set(inst, sm); }
+  const k = 1 - Math.exp(-dt * 8);
+  sm[0] += (tx - sm[0]) * k; sm[1] += (ty - sm[1]) * k;
+  if (!state.follow || !state.mouse) return;
+  inst.set('HeadTurnX', inst.get('HeadTurnX') + sm[0] * 28);
+  inst.set('HeadTurnY', inst.get('HeadTurnY') - sm[1] * 24);
+  inst.set('PupilX', sm[0]);
+  inst.set('PupilY', -sm[1]);
+  inst.set('BodyTurnX', inst.get('BodyTurnX') + sm[0] * 6);
+}
+
+canvas.addEventListener('pointermove', (e) => {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  state.mouse = [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr];
+});
+canvas.addEventListener('pointerleave', () => { state.mouse = null; });
+
+// ---- controls ------------------------------------------------------------------
+const countFromSlider = (v) => Math.max(1, Math.round(Math.pow(10, (v / 100) * Math.log10(2000))));
+$('count').addEventListener('input', () => {
+  state.count = countFromSlider(Number($('count').value));
+  $('countOut').textContent = state.count;
+  if (model) syncInstances();
+});
+$('mode').onchange = () => { state.mode = $('mode').value; };
+$('anim').onchange = () => {
+  state.anim = $('anim').value;
+  const a = model.animations.find((x) => x.name === state.anim);
+  if (a) $('exSeconds').value = a.duration.toFixed(1);
+};
+$('follow').onchange = () => { state.follow = $('follow').checked; };
+
+// ---- frame loop -----------------------------------------------------------------
+const ema = { fps: 0, update: 0, deform: 0, submit: 0 };
+const avg = (key, v) => { ema[key] = ema[key] ? ema[key] * 0.92 + v * 0.08 : v; return ema[key]; };
+let last = performance.now(), clock = 0, statTimer = 0;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!model) return;
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  clock += dt;
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  layout(w, h);
+
+  const t0 = performance.now();
+  if (!state.frozen) for (const inst of instances) {
+    inst.reset();
+    if (state.anim) inst.play(state.anim, clock + inst.offset);
+    applyFollow(inst, dt, w, h);
+    for (const [i, v] of state.pinned) inst.set(i, v);
+    inst.update(dt);
+  }
+  const t1 = performance.now();
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, w, h);
+  const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number);
+  gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  const st = renderer.draw(instances, w, h, state.mode);
+  const t2 = performance.now();
+
+  avg('fps', 1 / Math.max(dt, 1e-3));
+  avg('update', t1 - t0);
+  avg('deform', st.cpuDeformMs);
+  avg('submit', t2 - t1 - st.cpuDeformMs);
+  statTimer += dt;
+  if (statTimer > 0.25) {
+    statTimer = 0;
+    $('sFps').textContent = ema.fps.toFixed(0);
+    $('sUpdate').textContent = `${ema.update.toFixed(2)} ms`;
+    $('sDeform').textContent = state.mode === 'gpu' ? '0 ms（GPU が行う）' : `${ema.deform.toFixed(2)} ms`;
+    $('sSubmit').textContent = `${ema.submit.toFixed(2)} ms`;
+    $('sDraws').textContent = `${st.drawCalls} 回`;
+    $('sUpload').textContent = `${(st.uploadBytes / 1024).toFixed(1)} KB / フレーム`;
+    $('sVerts').textContent = `${model.vertexCount.toLocaleString()} × ${instances.length} 体 = ${(model.vertexCount * instances.length).toLocaleString()}`;
+    // keep the sliders showing current values when not pinned
+    if (instances[0]) document.querySelectorAll('.param').forEach((row) => {
+      const i = Number(row.dataset.index);
+      if (state.pinned.has(i)) return;
+      const v = instances[0].get(i);
+      row.querySelector('input').value = v;
+      row.querySelector('output').textContent = v.toFixed(2);
+    });
+  }
+}
+requestAnimationFrame(frame);
+
+// ---- export: GPU render into a framebuffer, read back, encode -------------------
+$('exGo').onclick = async () => {
+  const btn = $('exGo'), status = $('exStatus'), link = $('exportLink');
+  btn.disabled = true;
+  link.style.display = 'none';
+  try {
+    const scale = Number($('exScale').value), fps = Number($('exFps').value), seconds = Number($('exSeconds').value);
+    const [cw, ch, ox, oy] = model.canvas;
+    const w = Math.round(cw * scale), h = Math.round(ch * scale), n = Math.max(1, Math.round(seconds * fps));
+    const useBg = $('exBgOn').checked, hex = $('exBg').value;
+    const bg = [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255);
+    const fmt = $('exFormat').value;
+
+    const fb = gl.createFramebuffer(), tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+    const inst = model.createInstance();
+    inst.setTransform(scale, 0, 0, scale, ox * scale, oy * scale);
+    const step = (t, dt) => {
+      inst.reset();
+      if (state.anim) inst.play(state.anim, t);
+      for (const [i, v] of state.pinned) inst.set(i, v);
+      inst.update(dt);
+    };
+    const loop = model.animations.find((a) => a.name === state.anim)?.duration || 0;
+    for (let t = -loop; t < -1e-9; t += 1 / fps) step(t, 1 / fps); // settle physics for a seamless loop
+
+    const frames = [], px = new Uint8Array(w * h * 4);
+    for (let i = 0; i < n; i++) {
+      step(i / fps, 1 / fps);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.viewport(0, 0, w, h);
+      gl.clearColor(useBg ? bg[0] : 0, useBg ? bg[1] : 0, useBg ? bg[2] : 0, useBg ? 1 : 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      renderer.draw([inst], w, h, 'gpu');
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const out = new Uint8Array(w * h * 4);
+      for (let y = 0; y < h; y++) { // flip rows, un-premultiply
+        for (let x = 0; x < w; x++) {
+          const s = 4 * ((h - 1 - y) * w + x), d = 4 * (y * w + x), a = px[s + 3];
+          if (a) { out[d] = Math.min(255, Math.round((px[s] * 255) / a)); out[d + 1] = Math.min(255, Math.round((px[s + 1] * 255) / a)); out[d + 2] = Math.min(255, Math.round((px[s + 2] * 255) / a)); }
+          out[d + 3] = a;
+        }
+      }
+      frames.push(out);
+      if (i % 10 === 0) { status.textContent = `描画中 ${i + 1}/${n}`; await new Promise((r) => setTimeout(r)); }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(tex);
+    status.textContent = '圧縮中…';
+    await new Promise((r) => setTimeout(r));
+    const blob = fmt === 'gif' ? encodeGIF(frames, w, h, fps) : await encodeAPNG(frames, w, h, fps);
+    const name = `ugo9_${state.anim || 'still'}.${fmt === 'gif' ? 'gif' : 'png'}`;
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.textContent = `${name}（${(blob.size / 1024 / 1024).toFixed(2)} MB）を保存`;
+    link.style.display = 'inline-block';
+    status.textContent = `${n} コマ、${w}×${h}`;
+    link.click();
+  } catch (e) {
+    status.textContent = `失敗：${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ---- open a model from files ------------------------------------------------------
+$('open').onchange = async (e) => {
+  const files = [...e.target.files];
+  const ugo = files.find((f) => /\.(ug9|ugo)$/i.test(f.name));
+  if (!ugo) return fail('.ug9 のファイルを選んでください。');
+  const bytes = await ugo.arrayBuffer();
+  const probe = (await UgoRuntime.load()).loadModel(bytes);
+  const pngs = files.filter((f) => f.name.toLowerCase().endsWith('.png'));
+  const images = await Promise.all(probe.textures.map((name) => loadImage(pngs.find((f) => f.name === name.split('/').pop()) || pngs[0])));
+  await openModel(bytes, images);
+};
+
+// for automated tests
+window.ugoDemo = { state, gl, get model() { return model; }, get instances() { return instances; } };
+
+// ---- start with the bundled sample ----------------------------------------------------
+try {
+  const base = new URL('../samples/basic/', location.href);
+  const bytes = await (await fetch(new URL('model.ug9', base))).arrayBuffer();
+  await openModel(bytes, [await loadImage(new URL('atlas.png', base))]);
+} catch (e) {
+  fail(`見本を読み込めませんでした（${e.message}）。リポジトリのフォルダで node tools/serve.mjs を実行し、表示された URL を開いてください。`);
+}
+</script>
+</body>
+</html>

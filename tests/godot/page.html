@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Ugo9 Godot comparison</title>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Harness for tests/godot_test.mjs: draws the same cases as the Godot test
+// scene with the Web runtime and compares them with Godot's PNGs.
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+
+const rt = await UgoRuntime.load('/web/ugo.wasm');
+const canvas = document.getElementById('c');
+let gl;
+const renderers = new Map(); // model URL -> { model, renderer }
+const modelFor = async (url, textures = true) => {
+  if (!renderers.has(url)) {
+    const model = rt.loadModel(await (await fetch(url)).arrayBuffer());
+    // its textures from the same folder; a missing one is white (as in the Godot extension)
+    const white = () => createImageBitmap(new ImageData(new Uint8ClampedArray([255, 255, 255, 255]), 1, 1));
+    const dir = url.slice(0, url.lastIndexOf('/') + 1);
+    const images = await Promise.all((model.textures.length ? model.textures : ['']).map((t) => (t && textures ? loadImage(dir + t) : white())));
+    renderers.set(url, { model, renderer: new UgoRenderer(gl, model, images) });
+  }
+  return renderers.get(url);
+};
+
+const pixels = async (src) => {
+  const img = await createImageBitmap(src instanceof Blob ? src : await (await fetch(src)).blob());
+  const c = new OffscreenCanvas(img.width, img.height), x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  return { w: img.width, h: img.height, data: x.getImageData(0, 0, img.width, img.height).data };
+};
+
+window.compare = async (spec, c, godotUrl) => {
+  const { width: W, height: H, background: bg } = spec;
+  if (!gl) {
+    canvas.width = W; canvas.height = H;
+    gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true, alpha: false });
+  }
+  const { model, renderer } = await modelFor(c.webModel ?? '/samples/basic/model.ug9', c.textures !== false);
+  const instances = c.characters.map((ch) => {
+    const inst = model.createInstance();
+    inst.reset();
+    if (ch.anim) inst.play(ch.anim, ch.time ?? 0, 1);
+    for (const [k, v] of Object.entries(ch.params ?? {})) inst.set(k, v);
+    inst.update(0);
+    const r = ch.rotation ?? 0, sx = ch.scaleX ?? 1, sy = ch.scaleY ?? 1;
+    inst.setTransform(Math.cos(r) * sx, Math.sin(r) * sx, -Math.sin(r) * sy, Math.cos(r) * sy, ch.x, ch.y);
+    return inst;
+  });
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(bg[0], bg[1], bg[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  renderer.setSampling(c.sampling ?? 'linear'); // pixel art cases: nearest
+  renderer.draw(instances, W, H, 'gpu');
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  const web = await pixels(blob), god = await pixels(godotUrl);
+  if (web.w !== god.w || web.h !== god.h) return { error: `size ${god.w}x${god.h}, expected ${W}x${H}` };
+  // per-pixel difference (max over RGB); a diff image for looking at by eye
+  const diff = new OffscreenCanvas(W, H), dx = diff.getContext('2d'), out = dx.createImageData(W, H);
+  let max = 0, over16 = 0, over24 = 0, sum = 0, drawn = 0;
+  for (let i = 0; i < web.data.length; i += 4) {
+    const d = Math.max(Math.abs(web.data[i] - god.data[i]), Math.abs(web.data[i + 1] - god.data[i + 1]), Math.abs(web.data[i + 2] - god.data[i + 2]));
+    if (d > max) max = d;
+    if (d > 16) over16++;
+    if (d > 24) over24++;
+    sum += d;
+    const fg = Math.abs(web.data[i] - bg[0] * 255) + Math.abs(web.data[i + 1] - bg[1] * 255) + Math.abs(web.data[i + 2] - bg[2] * 255) > 6;
+    if (fg) drawn++;
+    out.data[i] = Math.min(255, d * 8); out.data[i + 1] = fg ? 40 : 0; out.data[i + 2] = 0; out.data[i + 3] = 255;
+  }
+  dx.putImageData(out, 0, 0);
+  const diffBlob = await diff.convertToBlob({ type: 'image/png' });
+  const b64 = async (b) => { const u8 = new Uint8Array(await b.arrayBuffer()); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+  return { max, over16, over24, mean: sum / (W * H), pixels: W * H, drawn, web: await b64(blob), diff: await b64(diffBlob) };
+};
+window.ready = true;
+</script>
+</body>
+</html>

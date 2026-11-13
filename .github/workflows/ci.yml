@@ -1,0 +1,217 @@
+name: ci
+
+# Runs on pull requests, on pushes to main and by hand. A push to a work
+# branch that has a pull request is tested through the pull request only.
+# Windows and macOS (billed at 2x and 10x) build on main and by hand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUGO_SHARED=ON -DUGO_STRICT=ON
+      - name: build
+        run: cmake --build build --config Release
+      - name: test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: frame comparison and PSD import
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          node tests/compare_frames_test.mjs
+          node tests/psd_test.mjs
+          node tests/psd_links_test.mjs
+          node tests/psd_robust_test.mjs
+          node tests/repack_atlas_test.mjs
+          node tests/psd_parallel_test.mjs
+          node tests/mesh_lineart_test.mjs
+          node tests/psd_add_layer_test.mjs
+          node tests/psd_replace_test.mjs
+          node tests/psd_bone_tags_test.mjs
+          node tests/psd_tags_test.mjs
+          node tests/psd_blend_bake_test.mjs
+          node tests/psd_adjust_test.mjs
+          node tests/psd_effects_test.mjs
+          node tests/psd_atlas_back_test.mjs
+          node tests/atlas_page_test.mjs
+          node tests/layers_test.mjs
+          node tests/ugo9_cli_test.mjs
+          node tests/model_info_test.mjs
+          node tests/procreate_test.mjs
+          node tests/aseprite_test.mjs
+          node tests/export_pose_psd_test.mjs
+          node tests/export_test.mjs
+          node tests/strip_model_test.mjs
+          node tests/export_camera_test.mjs
+          node tests/psd_check_test.mjs
+          node tests/export_sheet_test.mjs
+          node tests/export_preset_test.mjs
+          node tests/export_gif_matte_test.mjs
+          node tests/export_options_test.mjs
+          node tests/export_exit_test.mjs
+          node tests/export_seamless_test.mjs
+          node tests/export_nearest_test.mjs
+          node tests/export_mov_test.mjs
+          node tests/export_threads_test.mjs
+          node tests/export_backdrop_test.mjs
+          node tests/export_held_test.mjs
+          node tests/export_ntsc_test.mjs
+          node tests/photoshop_panel_test.mjs
+          node tests/import_ug9_test.mjs
+          node tests/load_error_test.mjs
+          node tests/japanese_names_test.mjs
+          node tests/compile_curves_test.mjs
+          node tests/atlas_sizes_test.mjs
+          node tests/pixel_check_test.mjs
+      - name: package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ugo9-${{ matrix.os }}
+          path: |
+            build/**/ugo_export
+            build/**/ugo_export.exe
+            build/**/*.dll
+            build/**/*.so
+            build/**/*.dylib
+            core/include/
+          if-no-files-found: warn
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: core tests under AddressSanitizer and UBSan
+        run: |
+          gcc -std=c99 -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all -Icore/include \
+            -o ugo_test tests/test_core.c core/src/ugo.c core/src/ugo_raster.c -lm
+          ./ugo_test samples/basic/model.ug9 --fuzz tests/pose/rig.ug9 --fuzz tests/warp/model.ug9 --fuzz tests/order/model.ug9 --fuzz tests/future/model.ug9 --fuzz tests/v11/model.ug9
+      - name: ugo_export's preset reader on broken input under AddressSanitizer and UBSan
+        run: |
+          gcc -std=c99 -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all -Icli \
+            -o test_preset tests/test_preset.c cli/preset.c -lm
+          ./test_preset
+      - name: ugo_export's ways out under AddressSanitizer and UBSan (nothing leaked or left open)
+        run: |
+          gcc -std=c99 -g -O1 -fsanitize=address,undefined -fno-sanitize-recover=all -Icore/include -Ithird_party -Icli \
+            -o ugo_export_asan cli/ugo_export.c cli/encoders.c cli/preset.c core/src/ugo.c core/src/ugo_raster.c -lm
+          UGO_EXPORT=./ugo_export_asan node tests/export_exit_test.mjs
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # usually 5-8; a hung browser test (2026-11-03) would otherwise hold the runner for 6 hours
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: rebuild the sample and the wasm core
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld ffmpeg
+          node tools/make_sample.mjs samples/basic
+          ./tools/build_wasm.sh
+      - name: browser test
+        run: |
+          npm install --no-save playwright@1.49.1 three@0.186.1 @pixiv/three-vrm@3.5.5 pixi.js@8.22.0 phaser@4.2.1
+          npx playwright install --with-deps chromium
+          node tests/tracks_test.mjs
+          node tests/pose_test.mjs
+          node tests/gltf_skin_test.mjs
+          node tests/face_angles_test.mjs
+          node tests/sphere_bake_test.mjs
+          node tests/eye_mouth_test.mjs
+          node tests/idle_test.mjs
+          node tests/starter_rig_test.mjs
+          node tests/scale_model_test.mjs
+          node tests/copy_animation_test.mjs
+          node tests/param_map_test.mjs
+          node tests/copy_physics_test.mjs
+          node tests/check_export_test.mjs
+          node tests/path_bake_test.mjs
+          node tests/warp_test.mjs
+          node tests/compile_test.mjs
+          node tests/constants_test.mjs
+          node tests/curve_keys_test.mjs
+          node tests/anim_layers_test.mjs
+          node tests/bone_pose_test.mjs
+          node tests/pick_test.mjs
+          node tests/track_read_test.mjs
+          node tests/settle_test.mjs
+          node tests/animator_test.mjs
+          node tests/wind_test.mjs
+          node tests/stats_test.mjs
+          node tests/trajectory_test.mjs
+          node tests/key_reduce_test.mjs
+          node tests/rebind_test.mjs
+          node tests/subdivide_test.mjs
+          node tests/weights_test.mjs
+          node tests/look_test.mjs
+          node tests/blink_test.mjs
+          node tests/determinism_test.mjs
+          node tests/wasm_simd_test.mjs
+          node tests/deform_path_test.mjs
+          node tests/links_test.mjs
+          node tests/api_doc_test.mjs
+          node tests/hostile_file_test.mjs
+          node tests/warp_expand_test.mjs
+          node tests/ug9_inspect_test.mjs
+          node tests/web_examples_test.mjs
+          node tests/bindings_test.mjs
+          node tests/webgpu_test.mjs
+          node tests/atlas_pages_test.mjs
+          node tests/chain_test.mjs
+          node tests/spine_test.mjs
+          node tests/spine_skins_test.mjs
+          node tests/export_spine_test.mjs
+          node tests/web_test.mjs
+          node tests/export_web_test.mjs
+          node tests/video_test.mjs
+          node tests/video_writer_test.mjs
+          node tests/after_effects_test.mjs
+          node tests/writer_sink_test.mjs
+          node tests/held_memory_test.mjs
+          node tests/mask_test.mjs
+          node tests/draw_order_test.mjs
+          df -h . /tmp /dev/shm && free -m # 2026-11-03: runs hung in the editor test; disk and memory were fine (12 GB, 6.8 GB free)
+          node tests/vtuber_test.mjs
+          node tests/tracking_test.mjs
+          node tests/vtuber_open_test.mjs
+          node tests/vtuber_artifact_test.mjs
+          node tests/mediapipe_local_test.mjs
+          node tests/frames_test.mjs
+          node tests/ssr_test.mjs
+          node tests/param_names_test.mjs
+          node tests/unpack_atlas_test.mjs
+          node tests/three3d_test.mjs
+          node tests/web2d_test.mjs
+          node tests/engine_pages_test.mjs
+          node tests/ug9_diff_test.mjs
+          node tools/export_vrm.mjs samples/basic/model.ug9 build/vrm/basic.vrm
+          node tests/vrm_test.mjs
+          node tests/export_browser_test.mjs
+          node tests/import_svg_test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-screenshots
+          path: |
+            build/web/
+            build/editor/
+            build/editor_flow/
+            build/editor_guide/
+            build/editor_tutorial/
+            build/vtuber/*.png
+            build/three3d/

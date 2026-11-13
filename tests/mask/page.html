@@ -1,0 +1,152 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<meta charset="utf-8"><title>mask test</title>
+<canvas id="c" width="440" height="620"></canvas>
+<script type="module">
+// Draws models with WebGL (one call per pass) and with the C software renderer
+// (in the same wasm), and reports how far the two pictures are apart.
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+const W = 440, H = 620;
+const gl = document.getElementById('c').getContext('webgl2', { antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: true });
+const rt = await UgoRuntime.load('/web/ugo.wasm');
+const ex = rt.ex;
+
+// a plain texture of one colour
+async function plain(w, h, color) {
+  const c = new OffscreenCanvas(w, h), x = c.getContext('2d'); x.fillStyle = color; x.fillRect(0, 0, w, h);
+  return createImageBitmap(c);
+}
+
+async function setup(url, images) {
+  const model = rt.loadModel(await (await fetch(url)).arrayBuffer());
+  // straight-alpha pixels for the C renderer: one UgoImage (pointer, width, height) per texture
+  const img = rt.alloc(12 * images.length);
+  images.forEach((image, i) => {
+    const c = new OffscreenCanvas(image.width, image.height), x = c.getContext('2d');
+    x.drawImage(image, 0, 0);
+    const rgba = x.getImageData(0, 0, image.width, image.height).data;
+    const px = rt.alloc(rgba.length); rt.u8(px, rgba.length).set(rgba);
+    rt.u32(img + 12 * i, 3).set([px, image.width, image.height]);
+  });
+  return { model, images, img };
+}
+
+function gpuPicture(s, inst, options) {
+  const r = new UgoRenderer(gl, s.model, s.images, options);
+  gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  const st = r.draw([inst], W, H, 'gpu');
+  const out = new Uint8Array(4 * W * H);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  return { px: out, draws: st.drawCalls, dual: !!r.dual };
+}
+
+function cpuPicture(s, inst) {
+  const nv = s.model.vertexCount, target = rt.alloc(16 * W * H), mask = rt.alloc(4 * W * H), scratch = rt.alloc(8 * nv + 8);
+  const view = rt.alloc(24); rt.f32(view, 6).set([1, 0, 0, 1, 0, 0]);
+  rt.f32(target, 4 * W * H).fill(0);
+  ex.ugo_raster_instance_masked(inst.ptr, s.img, s.images.length, target, W, H, view, scratch, mask);
+  return rt.f32(target, 4 * W * H).slice();
+}
+
+// max difference (0..255) between the GL picture (bottom-up, premultiplied bytes) and the C one
+function compare(gpu, cpu) {
+  let max = 0, over = 0, painted = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const g = 4 * ((H - 1 - y) * W + x), c = 4 * (y * W + x);
+    if (cpu[c + 3] > 0.01 || cpu[c] > 0.01) painted++;
+    for (let k = 0; k < 4; k++) {
+      const d = Math.abs(gpu.px[g + k] - Math.min(1, Math.max(0, cpu[c + k])) * 255);
+      if (d > max) max = d;
+      if (d > 24) over++;
+    }
+  }
+  return { max: Math.round(max), over, painted };
+}
+
+window.run = async () => {
+  const out = {};
+  const basic = await setup('/samples/basic/model.ug9', [await loadImage('/samples/basic/atlas.png')]);
+  const inst = basic.model.createInstance();
+  inst.setTransform(1, 0, 0, 1, W / 2, H - 15); // 1:1, so mipmapping doesn't differ from the C sampling
+  inst.reset(); inst.set('PupilX', 1); inst.set('PupilY', -1); inst.set('FaceColor', 1); inst.set('HeadTurnX', 12); inst.update(0);
+  const cpu = cpuPicture(basic, inst);
+  for (const [name, opt] of [['basic', {}], ['basic_strict', { strictMasks: true }], ['basic_nodual', { dualSource: false }]]) {
+    const g = gpuPicture(basic, inst, opt);
+    out[name] = { ...compare(g, cpu), draws: g.draws, dual: g.dual };
+  }
+  // the same pose without masks: the iris has to stick out of the eye white, else the test proves nothing
+  {
+    const nv = basic.model.vertexCount, target = rt.alloc(16 * W * H), scratch = rt.alloc(8 * nv + 8), view = rt.alloc(24);
+    rt.f32(view, 6).set([1, 0, 0, 1, 0, 0]);
+    ex.ugo_raster_instance(inst.ptr, basic.img, basic.images.length, target, W, H, view, scratch);
+    const plain = rt.f32(target, 4 * W * H);
+    let differ = 0;
+    for (let i = 0; i < plain.length; i += 4) if (Math.abs(plain[i] - cpu[i]) > 0.1) differ++;
+    out.maskEffect = differ;
+  }
+  // two textures of different sizes (the second is padded in the texture array)
+  const rig = await setup('/tests/pose/rig.ug9', [await plain(4, 4, '#fff'), await plain(8, 2, '#e04a8a')]);
+  const ri = rig.model.createInstance();
+  ri.setTransform(1.6, 0, 0, 1.6, 60, 160);
+  for (const t of [0, 0.7]) {
+    ri.reset(); ri.play('idle', t); ri.update(0);
+    const c = cpuPicture(rig, ri);
+    for (const [name, opt] of [['rig', {}], ['rig_nodual', { dualSource: false }]]) {
+      const g = gpuPicture(rig, ri, opt);
+      out[`${name}_t${t}`] = { ...compare(g, c), draws: g.draws, dual: g.dual };
+    }
+  }
+  // one renderer switched between models (the editor recompiling): same pictures as fresh renderers,
+  // the atlas kept while the images are the same
+  {
+    const pic = (r, inst) => { gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); r.draw([inst], W, H, 'gpu');
+      const px = new Uint8Array(4 * W * H); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+    const diff = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 2) n++; return n; };
+    const fresh = [pic(new UgoRenderer(gl, basic.model, basic.images), inst), pic(new UgoRenderer(gl, rig.model, rig.images), ri)];
+    const r = new UgoRenderer(gl, basic.model, basic.images);
+    const atlas = r.atlas;
+    const a1 = pic(r, inst);
+    r.setModel(rig.model, rig.images);
+    const b1 = pic(r, ri);
+    const basic2 = { ...basic, model: rt.loadModel(await (await fetch('/samples/basic/model.ug9')).arrayBuffer()) };
+    const i2 = basic2.model.createInstance();
+    i2.setTransform(1, 0, 0, 1, W / 2, H - 15); i2.reset(); i2.set('PupilX', 1); i2.set('PupilY', -1); i2.set('FaceColor', 1); i2.set('HeadTurnX', 12); i2.update(0);
+    r.setModel(basic2.model, basic.images);
+    const atlasAfterRig = r.atlas;
+    r.setModel(basic2.model, basic.images);
+    out.reuse = { basicDiff: diff(a1, fresh[0]), rigDiff: diff(b1, fresh[1]), basicAgain: diff(pic(r, i2), fresh[0]),
+      atlasKept: r.atlas === atlasAfterRig, atlasChanged: atlasAfterRig !== atlas };
+    r.dispose();
+    out.reuse.disposed = r.atlas === null && r.vbo === null;
+  }
+  return out;
+};
+// debugging: puts the C picture of the sample on the canvas
+window.showCpu = async () => {
+  const basic = await setup('/samples/basic/model.ug9', [await loadImage('/samples/basic/atlas.png')]);
+  const inst = basic.model.createInstance();
+  inst.setTransform(1, 0, 0, 1, W / 2, H - 15); inst.update(0);
+  const cpu = cpuPicture(basic, inst), d = new Uint8Array(4 * W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 4; k++) d[4 * ((H - 1 - y) * W + x) + k] = Math.min(255, cpu[4 * (y * W + x) + k] * 255);
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null); gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+};
+window.probe = async () => {
+  const basic = await setup('/samples/basic/model.ug9', [await loadImage('/samples/basic/atlas.png')]);
+  const inst = basic.model.createInstance();
+  inst.setTransform(1, 0, 0, 1, W / 2, H - 15); inst.update(0);
+  const cpu = cpuPicture(basic, inst), g = gpuPicture(basic, inst, {});
+  const at = (x, y) => [Array.from(g.px.slice(4 * ((H - 1 - y) * W + x), 4 * ((H - 1 - y) * W + x) + 4)), Array.from(cpu.slice(4 * (y * W + x), 4 * (y * W + x) + 4)).map((v) => Math.round(v * 255))];
+  console.log(JSON.stringify([at(160, 250), at(160, 120), at(10, 10)]));
+};
+window.showGpu = async () => {
+  const basic = await setup('/samples/basic/model.ug9', [await loadImage('/samples/basic/atlas.png')]);
+  const inst = basic.model.createInstance();
+  inst.setTransform(1, 0, 0, 1, W / 2, H - 15); inst.update(0);
+  gpuPicture(basic, inst, {});
+};
+window.ready = true;
+</script>

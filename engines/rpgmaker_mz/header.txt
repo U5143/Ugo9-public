@@ -1,0 +1,257 @@
+// SPDX-FileCopyrightText: 2026 U5143
+// SPDX-License-Identifier: MIT
+/*:
+ * @target MZ
+ * @plugindesc Ugo9 characters (2D animation) on the map and in battle, with talking during messages.
+ * @author Ugo9
+ * @url https://github.com/U5143/Ugo9
+ * @help Ugo9.js (MIT)
+ *
+ * Put each character's files (model.ug9 and its PNGs, as Ugo9's editor wrote them) in a folder
+ * under img/ugo9/, e.g. img/ugo9/hero/model.ug9 and img/ugo9/hero/atlas.png.
+ * The plugin commands show a character (by an id you choose), play its animations, set its
+ * parameters and expressions, and say who talks while messages are shown.
+ * Characters are drawn above the map / battle and below the windows. They are not saved
+ * with the game: show them again after loading (e.g. in an autorun event).
+ *
+ * @param Folder
+ * @desc The folder that holds one folder per character.
+ * @default img/ugo9/
+ *
+ * @param AutoBlink
+ * @type boolean
+ * @desc Characters blink on their own.
+ * @default true
+ *
+ * @param TalkWithMessages
+ * @type boolean
+ * @desc The speaker's mouth moves while a message is being written out.
+ * @default true
+ *
+ * @command show
+ * @text Show
+ * @desc Shows a character (it appears once its files are read).
+ * @arg id
+ * @text ID
+ * @desc A name you choose for this character (used by the other commands).
+ * @default hero
+ * @arg model
+ * @text Model folder
+ * @desc The folder under img/ugo9/ (e.g. hero).
+ * @default hero
+ * @arg x
+ * @type number
+ * @min -10000
+ * @desc Screen x of the model's origin (usually its feet).
+ * @default 408
+ * @arg y
+ * @type number
+ * @min -10000
+ * @desc Screen y of the model's origin.
+ * @default 624
+ * @arg scale
+ * @type number
+ * @decimals 2
+ * @default 0.5
+ * @arg animation
+ * @desc The animation to play (empty: the first).
+ * @default
+ *
+ * @command hide
+ * @text Hide
+ * @arg id
+ * @default hero
+ *
+ * @command move
+ * @text Move
+ * @arg id
+ * @default hero
+ * @arg x
+ * @type number
+ * @min -10000
+ * @default 408
+ * @arg y
+ * @type number
+ * @min -10000
+ * @default 624
+ * @arg scale
+ * @type number
+ * @decimals 2
+ * @default 0.5
+ *
+ * @command play
+ * @text Play animation
+ * @arg id
+ * @default hero
+ * @arg animation
+ * @default idle
+ * @arg fade
+ * @type number
+ * @decimals 2
+ * @desc Seconds to blend from the animation playing now.
+ * @default 0.3
+ *
+ * @command param
+ * @text Set parameter
+ * @desc Keeps a parameter at a value over the animation (an empty value gives it back).
+ * @arg id
+ * @default hero
+ * @arg name
+ * @default HeadTurnX
+ * @arg value
+ * @default
+ *
+ * @command expression
+ * @text Expression
+ * @desc Shows the model's expression (the others fade out); empty: none.
+ * @arg id
+ * @default hero
+ * @arg name
+ * @default
+ *
+ * @command speaker
+ * @text Speaker
+ * @desc Whose mouth moves while messages are written out (empty: nobody).
+ * @arg id
+ * @default hero
+ *
+ * @command lookAtMouse
+ * @text Look at the mouse
+ * @arg id
+ * @default hero
+ * @arg on
+ * @type boolean
+ * @default true
+ */
+/*:ja
+ * @target MZ
+ * @plugindesc Ugo9 のキャラ（2D アニメ）をマップと戦闘に出し、メッセージの間しゃべらせます。
+ * @author Ugo9
+ * @url https://github.com/U5143/Ugo9
+ * @help Ugo9.js（MIT）
+ *
+ * キャラごとのファイル（Ugo9 のエディタが書き出した model.ug9 と PNG）を、img/ugo9/ の下の
+ * フォルダに置きます（例：img/ugo9/hero/model.ug9 と img/ugo9/hero/atlas.png）。
+ * プラグインコマンドで、キャラを出す（ID は自由に決める）、アニメ・パラメータ・表情を変える、
+ * メッセージの間に口を動かすキャラ（話し手）を決める、ができます。
+ * キャラはマップ・戦闘の上、ウィンドウの下に描かれます。セーブには残らないので、
+ * ロードの後は自動実行のイベントなどで出し直してください。
+ *
+ * @param Folder
+ * @text フォルダ
+ * @desc キャラごとのフォルダを置くフォルダ。
+ * @default img/ugo9/
+ *
+ * @param AutoBlink
+ * @text 自分でまばたき
+ * @type boolean
+ * @default true
+ *
+ * @param TalkWithMessages
+ * @text メッセージの間しゃべる
+ * @type boolean
+ * @desc メッセージの文字が出ている間、話し手の口が動く。
+ * @default true
+ *
+ * @command show
+ * @text 出す
+ * @desc キャラを出す（ファイルを読み終わると出る）。
+ * @arg id
+ * @text ID
+ * @desc このキャラに付ける名前（ほかのコマンドで使う）。
+ * @default hero
+ * @arg model
+ * @text モデルのフォルダ
+ * @desc img/ugo9/ の下のフォルダ（例 hero）。
+ * @default hero
+ * @arg x
+ * @type number
+ * @min -10000
+ * @desc モデルの原点（ふつうは足もと）の画面の x。
+ * @default 408
+ * @arg y
+ * @type number
+ * @min -10000
+ * @desc モデルの原点の画面の y。
+ * @default 624
+ * @arg scale
+ * @text 大きさ
+ * @type number
+ * @decimals 2
+ * @default 0.5
+ * @arg animation
+ * @text アニメ
+ * @desc 再生するアニメ（空なら最初の物）。
+ * @default
+ *
+ * @command hide
+ * @text 消す
+ * @arg id
+ * @default hero
+ *
+ * @command move
+ * @text 動かす
+ * @arg id
+ * @default hero
+ * @arg x
+ * @type number
+ * @min -10000
+ * @default 408
+ * @arg y
+ * @type number
+ * @min -10000
+ * @default 624
+ * @arg scale
+ * @text 大きさ
+ * @type number
+ * @decimals 2
+ * @default 0.5
+ *
+ * @command play
+ * @text アニメ
+ * @arg id
+ * @default hero
+ * @arg animation
+ * @text アニメ
+ * @default idle
+ * @arg fade
+ * @text 混ぜる秒
+ * @type number
+ * @decimals 2
+ * @default 0.3
+ *
+ * @command param
+ * @text パラメータ
+ * @desc アニメの上にパラメータを置く（値を空にすると戻す）。
+ * @arg id
+ * @default hero
+ * @arg name
+ * @text 名前
+ * @default HeadTurnX
+ * @arg value
+ * @text 値
+ * @default
+ *
+ * @command expression
+ * @text 表情
+ * @desc モデルの表情を出す（ほかは消える）。空なら無し。
+ * @arg id
+ * @default hero
+ * @arg name
+ * @text 名前
+ * @default
+ *
+ * @command speaker
+ * @text 話し手
+ * @desc メッセージの間に口を動かすキャラ（空なら誰も）。
+ * @arg id
+ * @default hero
+ *
+ * @command lookAtMouse
+ * @text マウスを見る
+ * @arg id
+ * @default hero
+ * @arg on
+ * @type boolean
+ * @default true
+ */

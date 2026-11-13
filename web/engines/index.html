@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ugo9 in web engines</title>
+<style>body { font: 15px/1.6 system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }</style></head>
+<body>
+<h1>Ugo9 を Web のエンジンで</h1>
+<p>見本のキャラ（samples/basic）を、それぞれのエンジンの中に出します。右の欄で、アニメを選ぶ・パラメータを動かす・マイクで口を動かす（雑音の門つき）・自分でまばたき。キャラをクリックすると、そこにあるパーツの名前が出ます。</p>
+<ul>
+  <li><a href="three.html">three.js</a>（3D の場面の中の板。右ドラッグでカメラを回す）</li>
+  <li><a href="pixi.html">PixiJS</a>（v8）</li>
+  <li><a href="phaser.html">Phaser</a>（4）</li>
+</ul>
+<p>エンジンは CDN（jsDelivr）から読みます。このフォルダを開くには、リポジトリの頭で <code>node tools/serve.mjs 8080</code> などの小さなサーバーを立て、<code>http://localhost:8080/web/engines/</code> を開きます。使い方は docs/エンジンの使い方.md。</p>
+</body></html>

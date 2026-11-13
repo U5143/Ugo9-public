@@ -1,0 +1,14 @@
+rig.png
+size: 256, 128
+filter: Linear, Linear
+torso
+bounds: 0, 0, 40, 80
+arm
+bounds: 40, 0, 120, 20
+eye-open
+bounds: 160, 0, 10, 10
+eye-closed
+bounds: 170, 0, 10, 10
+flag
+bounds: 186, 4, 40, 30
+offsets: 2, 3, 44, 36

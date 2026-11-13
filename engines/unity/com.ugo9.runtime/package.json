@@ -1,0 +1,43 @@
+{
+  "name": "com.ugo9.runtime",
+  "version": "0.6.0",
+  "displayName": "Ugo9",
+  "description": "Ugo9 2D characters: the C core computes a few hundred bytes per character, the GPU deforms every vertex, and many characters draw in a few calls.",
+  "license": "MIT",
+  "unity": "2022.3",
+  "keywords": [
+    "2d",
+    "animation",
+    "character"
+  ],
+  "author": {
+    "name": "Ugo9"
+  },
+  "samples": [
+    {
+      "displayName": "Playground",
+      "description": "Open and press Play: the sample character with animation buttons, a slider per parameter, blinking, the microphone moving the mouth, and the part under a click.",
+      "path": "Samples~/Playground"
+    },
+    {
+      "displayName": "Demo",
+      "description": "A crowd in one batch and a character that looks at the mouse.",
+      "path": "Samples~/Demo"
+    },
+    {
+      "displayName": "Conversation",
+      "description": "One character in a conversation: looks at the mouse, blinks, 1-9 expressions (preset basic.ug9x), hold Space to talk, A switches animations with a mix.",
+      "path": "Samples~/Conversation"
+    },
+    {
+      "displayName": "Render test",
+      "description": "Draws the engine test scenes and saves PNGs to compare with the Web runtime (node tests/unity_test.mjs).",
+      "path": "Samples~/RenderTest"
+    },
+    {
+      "displayName": "Bench",
+      "description": "Measures fps, main-thread CPU time, draw calls and memory for 50 to 6400 characters in a fixed grid (docs/比較_Live2D.md).",
+      "path": "Samples~/Bench"
+    }
+  ]
+}

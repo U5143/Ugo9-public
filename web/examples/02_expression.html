@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 の例：表情</title>
+<style>body{margin:0;font:14px system-ui,sans-serif;background:#f4f4f6;color:#222}main{max-width:640px;margin:0 auto;padding:16px}canvas{width:100%;max-width:420px;aspect-ratio:420/600;display:block;margin:12px auto;background:#fff;border-radius:8px}p{line-height:1.6}#out{min-height:1.5em;text-align:center}</style>
+<script>/* opened straight from the disk the browser loads no modules: say what to do */ if (location.protocol === 'file:') addEventListener('DOMContentLoaded', function () { var o = document.getElementById('out') || document.querySelector('main'); var p = document.createElement('p'); p.style.color = '#b4502a'; p.textContent = 'ファイルを直接開くと、ブラウザが芯（WASM）とモデルを読ませません。リポジトリのフォルダで node tools/serve.mjs（か npx serve など、どの静的なサーバーでも）を動かし、http://localhost:…/web/examples/ を開いてください。'; o.appendChild(p); });</script>
+</head><body><main>
+<h1>表情</h1>
+<p>表情を名前で書いたプリセットを読み、UgoExpressionMixer でフェードしながら切り替える。</p>
+<canvas id="c" width="420" height="600"></canvas>
+<div id="out"></div>
+<p><a href="./">例の一覧</a> ・ 関数は docs/芯のAPI.md</p>
+</main>
+<script type="module">
+import { start } from './common.js';
+import { UgoExpressionMixer } from '../ugo.js';
+const { model, inst, loop } = await start(document.getElementById('c'));
+// a preset by the parameters' names (.ug9x); names the model lacks are skipped
+const { expressions } = model.loadExpressions({ format: 'ugo9-expressions', version: 1, expressions: [
+  { id: 'smile', fadeIn: 0.3, fadeOut: 0.3, params: { EyeOpenL: ['multiply', 0.6], EyeOpenR: ['multiply', 0.6], MouthOpen: ['set', 0.35] } },
+  { id: 'surprised', params: { EyeOpenL: ['set', 1], EyeOpenR: ['set', 1], MouthOpen: ['set', 0.9], BrowY: ['add', 0.8] } }] });
+const mixer = new UgoExpressionMixer(model);
+const out = document.getElementById('out');
+for (const e of expressions) { const b = document.createElement('button'); b.textContent = e.name; b.onclick = () => mixer.only(e); out.append(b, ' '); }
+const none = document.createElement('button'); none.textContent = 'none'; none.onclick = () => mixer.only(); out.append(none);
+loop((dt, t) => { inst.play(0, t); mixer.update(dt); mixer.apply(inst); });
+</script>
+</body></html>

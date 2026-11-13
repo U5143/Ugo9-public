@@ -1,0 +1,23 @@
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compile-checks the Unity package's C# against stand-ins for Unity's API (UnityStubs.cs). -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <DefineConstants>UNITY_EDITOR</DefineConstants>
+    <!-- dotnet build -p:InputSystem=true: as in a project that uses only the Input System package -->
+    <DefineConstants Condition="'$(InputSystem)' == 'true'">$(DefineConstants);ENABLE_INPUT_SYSTEM</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="../../engines/unity/com.ugo9.runtime/Runtime/**/*.cs" />
+    <Compile Include="../../engines/unity/com.ugo9.runtime/Editor/**/*.cs" />
+    <Compile Include="../../engines/unity/com.ugo9.runtime/Samples~/**/*.cs" />
+    <Compile Include="../../engines/unity/com.ugo9.runtime/Timeline/**/*.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 5,
+  "id": "ugo9.check",
+  "name": "Ugo9 check",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": { "app": "PS", "minVersion": "23.3.0" },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "ugo9CheckPanel",
+      "label": { "default": "Ugo9 check", "ja": "Ugo9 の確かめ" },
+      "minimumSize": { "width": 230, "height": 200 },
+      "preferredDockedSize": { "width": 300, "height": 400 }
+    }
+  ],
+  "requiredPermissions": {}
+}

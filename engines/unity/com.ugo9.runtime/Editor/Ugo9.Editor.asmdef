@@ -1,0 +1,8 @@
+{
+  "name": "Ugo9.Editor",
+  "rootNamespace": "Ugo9.Editor",
+  "references": ["Ugo9.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "autoReferenced": true
+}

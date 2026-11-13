@@ -1,0 +1,138 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<meta charset="utf-8"><title>webgpu test</title>
+<canvas id="c" width="448" height="448"></canvas>
+<script type="module">
+// Draws the same characters with UgoRenderer (WebGL2) and UgoGPURenderer (WebGPU) and reports how far the
+// two pictures are apart.
+import { UgoRuntime, UgoRenderer, loadImage } from '/web/ugo.js';
+import { UgoGPURenderer, createRenderer } from '/web/ugo_webgpu.js';
+import { compileUgo } from '/tools/compile.mjs';
+const W = 448, H = 448; // rows of 4 * 448 bytes: copyTextureToBuffer wants multiples of 256
+const gl = document.getElementById('c').getContext('webgl2', { antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: true });
+const rt = await UgoRuntime.load('/web/ugo.wasm');
+const adapter = await navigator.gpu?.requestAdapter();
+const device = adapter && await adapter.requestDevice();
+const errors = [];
+if (device) device.addEventListener('uncapturederror', (e) => errors.push(e.error.message));
+
+async function plain(w, h, color) {
+  const c = new OffscreenCanvas(w, h), x = c.getContext('2d'); x.fillStyle = color; x.fillRect(0, 0, w, h);
+  return createImageBitmap(c);
+}
+async function gradient(w, h) { // texels that differ, so sampling mistakes show
+  const c = new OffscreenCanvas(w, h), x = c.getContext('2d'), g = x.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, 'rgba(255,40,40,1)'); g.addColorStop(0.5, 'rgba(40,200,90,0.6)'); g.addColorStop(1, 'rgba(60,60,255,1)');
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+  return createImageBitmap(c, { premultiplyAlpha: 'premultiply' });
+}
+const load = async (url) => rt.loadModel(await (await fetch(url)).arrayBuffer());
+
+function glPicture(model, images, insts, mode = 'gpu', options = {}) {
+  const r = new UgoRenderer(gl, model, images, options);
+  gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  const st = r.draw(insts, W, H, mode);
+  const px = new Uint8Array(4 * W * H);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  r.dispose();
+  const out = new Uint8Array(4 * W * H); // top-down
+  for (let y = 0; y < H; y++) out.set(px.subarray(4 * (H - 1 - y) * W, 4 * (H - y) * W), 4 * y * W);
+  return { px: out, draws: st.drawCalls };
+}
+async function gpuPicture(model, images, insts, mode = 'gpu', options = {}) {
+  const r = new UgoGPURenderer(device, null, model, images, { ...options, format: 'rgba8unorm' });
+  const tex = device.createTexture({ size: [W, H], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+  const st = r.draw(insts, W, H, mode, tex.createView());
+  const buf = device.createBuffer({ size: 4 * W * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc = device.createCommandEncoder();
+  enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: 4 * W }, [W, H]);
+  device.queue.submit([enc.finish()]);
+  await buf.mapAsync(GPUMapMode.READ);
+  const px = new Uint8Array(buf.getMappedRange()).slice();
+  buf.destroy(); tex.destroy(); r.dispose();
+  return { px, draws: st.drawCalls };
+}
+function compare(a, b) {
+  let max = 0, over = 0, painted = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    if (a[i + 3] > 2 || b[i + 3] > 2) painted++;
+    for (let k = 0; k < 4; k++) { const d = Math.abs(a[i + k] - b[i + k]); if (d > max) max = d; if (d > 24) over++; }
+  }
+  return { max, over, painted };
+}
+
+// every blend, a colour slot, an inverted mask, a mask through a texture's alpha, a hidden mask part
+const blends = compileUgo({
+  format: 'ugo9', canvas: { width: 400, height: 400 },
+  textures: ['a.png', 'b.png'],
+  parameters: [{ id: 'Tint', min: 0, default: 0, max: 1 }],
+  colors: [{ id: 'c', multiply: [1, 1, 1], screen: [0, 0, 0] }],
+  bones: [{ id: 'root' }],
+  parts: [
+    { id: 'back', texture: 0, ...quad(20, 20, 360, 360) },
+    { id: 'add', texture: 1, blend: 'add', ...quad(40, 40, 150, 150) },
+    { id: 'mul', texture: 0, blend: 'multiply', ...quad(120, 60, 150, 200) },
+    { id: 'scr', texture: 1, blend: 'screen', ...quad(200, 150, 150, 150) },
+    { id: 'clip', maskOnly: true, solid: true, ...quad(60, 230, 120, 80) },
+    { id: 'inside', texture: 1, mask: ['clip'], color: 'c', ...quad(30, 200, 200, 150) },
+    { id: 'outside', texture: 0, mask: ['clip'], maskInvert: true, ...quad(150, 260, 200, 120) },
+  ],
+  deformers: [{ region: { Tint: [0, 1, 1] }, colors: { c: { multiply: [-0.5, 0, -0.2], screen: [0.3, 0, 0] } } }],
+});
+function quad(x, y, w, h) { return { vertices: [x, y, x + w, y, x + w, y + h, x, y + h], uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 0, 2, 3] }; }
+
+window.run = async () => {
+  if (!device) return { noWebGPU: true };
+  const out = {};
+  const cases = [];
+  { // the sample: masks, one texture
+    const model = await load('/samples/basic/model.ug9'), images = [await loadImage('/samples/basic/atlas.png')];
+    const a = model.createInstance(), b = model.createInstance();
+    a.setTransform(0.6, 0, 0, 0.6, 120, 390); a.reset(); a.set('PupilX', 1); a.set('FaceColor', 1); a.set('HeadTurnX', 12); a.update(0);
+    b.setTransform(-0.5, 0, 0, 0.5, 300, 380); b.reset(); b.set('HeadTurnX', -20); b.set('MouthOpen', 1); b.update(0);
+    cases.push(['basic', model, images, [a, b]], ['basic_strict', model, images, [a, b], 'gpu', { strictMasks: true }], ['basic_cpu', model, images, [a, b], 'cpu']);
+  }
+  { // warp grids
+    const model = await load('/tests/warp/model.ug9'), images = [await loadImage('/tests/warp/atlas.png')];
+    const a = model.createInstance();
+    a.setTransform(1.2, 0, 0, 1.2, 200, 340);
+    a.reset(); model.params.forEach((p, i) => a.set(p.id, p.min + (p.max - p.min) * (0.3 + 0.13 * i % 0.7))); a.update(0);
+    cases.push(['warp', model, images, [a]]);
+  }
+  { // draw orders that change, two textures of different sizes
+    const model = await load('/tests/order/model.ug9'), images = [await plain(4, 4, '#3a7'), await gradient(16, 8)];
+    const insts = [0, 1, 0.5].map((v, i) => { const s = model.createInstance(); s.setTransform(1, 0, 0, 1, 70 + 130 * i, 200); s.reset(); model.params.forEach((p) => s.set(p.id, v)); s.update(0); return s; });
+    cases.push(['order', model, images, insts]);
+  }
+  { // blends, colours, masks
+    const model = rt.loadModel(blends), images = [await gradient(64, 64), await plain(8, 8, 'rgba(200,120,30,0.8)')];
+    const a = model.createInstance(); a.reset(); a.set('Tint', 1); a.update(0);
+    cases.push(['blends', model, images, [a]], ['blends_nearest', model, images, [a], 'gpu', { sampling: 'nearest' }]);
+  }
+  for (const [name, model, images, insts, mode = 'gpu', options = {}] of cases) {
+    const g = glPicture(model, images, insts, mode, { ...options, dualSource: false });
+    const w = await gpuPicture(model, images, insts, mode, options);
+    out[name] = { ...compare(g.px, w.px), drawsGL: g.draws, drawsGPU: w.draws };
+  }
+  await device.queue.onSubmittedWorkDone();
+  out.errors = errors;
+  out.adapter = adapter.info ? [adapter.info.vendor, adapter.info.architecture, adapter.info.description].filter(Boolean).join(' / ') : '?';
+  { // last: where presenting fails it can take the browser's WebGPU down with it (WebGL2 still works)
+    // createRenderer picks WebGPU where it can show frames, and WebGL2 when asked not to
+    const model = rt.loadModel(blends), images = [await plain(2, 2, '#fff')];
+    const c1 = document.createElement('canvas'), c2 = document.createElement('canvas');
+    const r1 = await createRenderer(c1, model, images);
+    out.create = [r1.kind, (await createRenderer(c2, model, images, { webgpu: false })).kind];
+    if (r1.kind === 'webgpu') { // and it shows frames on its canvas: draw one, then read it back in the same task
+      const i = model.createInstance(); i.update(0);
+      r1.draw([i], c1.width, c1.height);
+      const x = new OffscreenCanvas(c1.width, c1.height).getContext('2d'); x.drawImage(c1, 0, 0);
+      const d = x.getImageData(0, 0, c1.width, c1.height).data; let n = 0; for (let k = 3; k < d.length; k += 4) if (d[k]) n++;
+      out.create.push(n);
+    }
+  }
+  return out;
+};
+window.ready = true;
+</script>

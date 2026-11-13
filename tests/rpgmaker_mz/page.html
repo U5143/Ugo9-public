@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- The RPG Maker MZ plugin (build/rpgmaker_mz/Ugo9.js) in PixiJS 5 (the version MZ ships), with stand-ins
+     for the few MZ objects it uses. Driven by tests/rpgmaker_mz_test.mjs. -->
+<meta charset="utf-8">
+<title>Ugo9 MZ plugin test</title>
+<body style="margin:0;background:#888">
+<script src="/build/rpgmaker_mz/pixi5/node_modules/pixi.js/dist/pixi.js"></script>
+<script>
+  // stand-ins for MZ (only what the plugin touches)
+  const commands = {};
+  window.PluginManager = {
+    parameters: (name) => (name === 'Ugo9' ? { Folder: '/samples/', AutoBlink: 'true', TalkWithMessages: 'true' } : {}),
+    registerCommand: (plugin, name, f) => { commands[`${plugin}.${name}`] = f; },
+  };
+  window.run = (name, args) => commands[`Ugo9.${name}`](args);
+  window.Graphics = { width: 816, height: 624 };
+  window.TouchInput = { x: 408, y: 100 };
+  window.$gameMessage = { busy: false, isBusy() { return this.busy; } };
+  class Scene_Base extends PIXI.Container { update() {} }
+  class Scene_Map extends Scene_Base {}
+  class Scene_Battle extends Scene_Base {}
+  Object.assign(window, { Scene_Base, Scene_Map, Scene_Battle });
+</script>
+<script src="/build/rpgmaker_mz/Ugo9.js"></script>
+<script>
+  const app = new PIXI.Application({ width: 816, height: 624, backgroundColor: 0x203040, preserveDrawingBuffer: true });
+  document.body.appendChild(app.view);
+  const scene = new Scene_Map();
+  const back = new PIXI.Graphics(); back.beginFill(0x203040); back.drawRect(0, 0, 816, 624); back.endFill();
+  scene.addChild(back);
+  scene._windowLayer = new PIXI.Container();
+  // a "window" (blue) over part of the character
+  const win = new PIXI.Graphics(); win.beginFill(0x0000ff); win.drawRect(0, 520, 816, 104); win.endFill();
+  scene._windowLayer.addChild(win);
+  scene.addChild(scene._windowLayer);
+  scene._messageWindow = { _textState: null };
+  app.stage.addChild(scene);
+  app.ticker.stop();
+  window.step = (n) => { for (let i = 0; i < n; i++) { scene.update(); app.renderer.render(app.stage); } };
+  window.pixel = (x, y) => {
+    const gl = app.renderer.gl, p = new Uint8Array(4);
+    gl.readPixels(x, 624 - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    return Array.from(p);
+  };
+  window.drawn = () => {
+    const gl = app.renderer.gl, p = new Uint8Array(816 * 624 * 4);
+    gl.readPixels(0, 0, 816, 624, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    let n = 0;
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - 0x20) + Math.abs(p[i + 1] - 0x30) + Math.abs(p[i + 2] - 0x40) > 30 && !(p[i + 2] > 200 && p[i] < 40)) n++;
+    return n;
+  };
+  window.scene = scene;
+  window.loaded = true;
+</script>

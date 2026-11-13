@@ -1,0 +1,16 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Ugo9",
+	"Description": "Ugo9 2D characters: the C core computes a few hundred bytes per character, the GPU deforms every vertex.",
+	"Category": "Animation",
+	"CreatedBy": "Ugo9",
+	"EngineVersion": "5.6.0",
+	"CanContainContent": false,
+	"Installed": false,
+	"Modules": [
+		{ "Name": "Ugo9", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
+		{ "Name": "Ugo9Editor", "Type": "Editor", "LoadingPhase": "Default" }
+	]
+}

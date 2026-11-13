@@ -1,0 +1,289 @@
+{
+ "format": "ugo9",
+ "version": "1.0",
+ "canvas": {
+  "width": 200,
+  "height": 200,
+  "originX": 100,
+  "originY": 100
+ },
+ "parameters": [
+  {
+   "id": "Puff",
+   "min": 0,
+   "default": 0,
+   "max": 1
+  },
+  {
+   "id": "Pull",
+   "min": 0,
+   "default": 0,
+   "max": 1
+  },
+  {
+   "id": "Sw",
+   "min": 0,
+   "default": 0,
+   "max": 1
+  }
+ ],
+ "bones": [
+  {
+   "id": "root"
+  },
+  {
+   "id": "pin",
+   "warp": "g",
+   "x": 10,
+   "y": 5
+  }
+ ],
+ "warps": [
+  {
+   "id": "g",
+   "cols": 2,
+   "rows": 2,
+   "rect": [
+    -50,
+    -30,
+    100,
+    60
+   ],
+   "angle": 30,
+   "bone": "root"
+  },
+  {
+   "id": "inner",
+   "cols": 1,
+   "rows": 1,
+   "rect": [
+    -10,
+    -10,
+    20,
+    20
+   ],
+   "angle": -15,
+   "parent": "g"
+  }
+ ],
+ "parts": [
+  {
+   "id": "sq",
+   "warp": "g",
+   "vertices": [
+    -30,
+    -10,
+    20,
+    -15,
+    25,
+    20,
+    -20,
+    15
+   ],
+   "uvs": [
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0,
+    1
+   ],
+   "triangles": [
+    0,
+    1,
+    2,
+    0,
+    2,
+    3
+   ]
+  },
+  {
+   "id": "in",
+   "warp": "inner",
+   "vertices": [
+    -5,
+    -5,
+    5,
+    -5,
+    5,
+    5,
+    -5,
+    5
+   ],
+   "uvs": [
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0,
+    1
+   ],
+   "triangles": [
+    0,
+    1,
+    2,
+    0,
+    2,
+    3
+   ],
+   "order": 450
+  },
+  {
+   "id": "arm",
+   "bone": "pin",
+   "vertices": [
+    10,
+    5,
+    40,
+    5,
+    40,
+    10,
+    10,
+    10
+   ],
+   "uvs": [
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0,
+    1
+   ],
+   "triangles": [
+    0,
+    1,
+    2,
+    0,
+    2,
+    3
+   ]
+  }
+ ],
+ "deformers": [
+  {
+   "region": {
+    "Puff": [
+     0,
+     1,
+     1
+    ]
+   },
+   "morphs": {
+    "sq": {
+     "vertices": [
+      0
+     ],
+     "deltas": [
+      3,
+      -4
+     ]
+    }
+   }
+  },
+  {
+   "region": {
+    "Pull": [
+     0,
+     1,
+     1
+    ]
+   },
+   "warps": {
+    "g": {
+     "points": [
+      4
+     ],
+     "deltas": [
+      6,
+      2
+     ]
+    }
+   }
+  },
+  {
+   "region": {
+    "Sw": [
+     0,
+     1,
+     1
+    ]
+   },
+   "order": {
+    "sq": 900,
+    "arm": 100
+   }
+  }
+ ],
+ "animations": [
+  {
+   "id": "swap",
+   "duration": 2,
+   "tracks": {
+    "Pull": [
+     [
+      0,
+      0
+     ],
+     [
+      1,
+      1,
+      "smooth"
+     ],
+     [
+      2,
+      0
+     ]
+    ]
+   },
+   "order": {
+    "in": [
+     [
+      0,
+      450
+     ],
+     [
+      1,
+      950,
+      "step"
+     ],
+     [
+      2,
+      450
+     ]
+    ]
+   }
+  }
+ ],
+ "expressions": [
+  {
+   "id": "puffed",
+   "fadeIn": 0.3,
+   "fadeOut": 0.6,
+   "params": {
+    "Puff": [
+     "set",
+     1
+    ],
+    "Pull": [
+     "multiply",
+     0.5
+    ]
+   }
+  },
+  {
+   "id": "swapped",
+   "params": {
+    "Sw": [
+     "add",
+     0.75
+    ]
+   }
+  }
+ ]
+}

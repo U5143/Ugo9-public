@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 の例：読み込んで再生する</title>
+<style>body{margin:0;font:14px system-ui,sans-serif;background:#f4f4f6;color:#222}main{max-width:640px;margin:0 auto;padding:16px}canvas{width:100%;max-width:420px;aspect-ratio:420/600;display:block;margin:12px auto;background:#fff;border-radius:8px}p{line-height:1.6}#out{min-height:1.5em;text-align:center}</style>
+<script>/* opened straight from the disk the browser loads no modules: say what to do */ if (location.protocol === 'file:') addEventListener('DOMContentLoaded', function () { var o = document.getElementById('out') || document.querySelector('main'); var p = document.createElement('p'); p.style.color = '#b4502a'; p.textContent = 'ファイルを直接開くと、ブラウザが芯（WASM）とモデルを読ませません。リポジトリのフォルダで node tools/serve.mjs（か npx serve など、どの静的なサーバーでも）を動かし、http://localhost:…/web/examples/ を開いてください。'; o.appendChild(p); });</script>
+</head><body><main>
+<h1>読み込んで再生する</h1>
+<p>UgoRuntime で芯を読み、モデルを読み、1 体を作って、アニメを流すだけの最小の形。</p>
+<canvas id="c" width="420" height="600"></canvas>
+<div id="out"></div>
+<p><a href="./">例の一覧</a> ・ 関数は docs/芯のAPI.md</p>
+</main>
+<script type="module">
+import { start } from './common.js';
+const { model, inst, loop } = await start(document.getElementById('c'));
+document.getElementById('out').textContent = `${model.params.length} parameters, ${model.animations.map((a) => a.name).join(', ')}`;
+const anim = model.animations[0]?.name;
+loop((dt, t) => { if (anim) inst.play(anim, t); });
+</script>
+</body></html>

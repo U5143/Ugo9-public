@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 U5143 -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ugo9 の例：まばたき</title>
+<style>body{margin:0;font:14px system-ui,sans-serif;background:#f4f4f6;color:#222}main{max-width:640px;margin:0 auto;padding:16px}canvas{width:100%;max-width:420px;aspect-ratio:420/600;display:block;margin:12px auto;background:#fff;border-radius:8px}p{line-height:1.6}#out{min-height:1.5em;text-align:center}</style>
+<script>/* opened straight from the disk the browser loads no modules: say what to do */ if (location.protocol === 'file:') addEventListener('DOMContentLoaded', function () { var o = document.getElementById('out') || document.querySelector('main'); var p = document.createElement('p'); p.style.color = '#b4502a'; p.textContent = 'ファイルを直接開くと、ブラウザが芯（WASM）とモデルを読ませません。リポジトリのフォルダで node tools/serve.mjs（か npx serve など、どの静的なサーバーでも）を動かし、http://localhost:…/web/examples/ を開いてください。'; o.appendChild(p); });</script>
+</head><body><main>
+<h1>まばたき</h1>
+<p>UgoBlink：2〜6 秒ごとに自分でまばたきする（種が同じなら同じ時に）。表情の半目にも掛かる。</p>
+<canvas id="c" width="420" height="600"></canvas>
+<div id="out"></div>
+<p><a href="./">例の一覧</a> ・ 関数は docs/芯のAPI.md</p>
+</main>
+<script type="module">
+import { start } from './common.js';
+import { UgoBlink } from '../ugo.js';
+const { model, inst, loop } = await start(document.getElementById('c'));
+const blink = new UgoBlink(model, { seed: 7 });
+loop((dt, t) => { inst.play(0, t); blink.update(dt); blink.apply(inst); });
+</script>
+</body></html>
