@@ -53,7 +53,6 @@ jobs:
           node tests/model_info_test.mjs
           node tests/procreate_test.mjs
           node tests/aseprite_test.mjs
-          node tests/export_pose_psd_test.mjs
           node tests/export_test.mjs
           node tests/strip_model_test.mjs
           node tests/export_camera_test.mjs
@@ -123,6 +122,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld ffmpeg
           node tools/make_sample.mjs samples/basic
           ./tools/build_wasm.sh
+      - name: build ugo_export (the pictures the browser tests compare with)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target ugo_export
       - name: browser test
         run: |
           npm install --no-save playwright@1.49.1 three@0.186.1 @pixiv/three-vrm@3.5.5 pixi.js@8.22.0 phaser@4.2.1
@@ -178,6 +181,7 @@ jobs:
           node tests/export_spine_test.mjs
           node tests/web_test.mjs
           node tests/export_web_test.mjs
+          node tests/export_pose_psd_test.mjs # (a browser too: tools/psd_write.mjs in a page; moved from the native job, which has no Playwright)
           node tests/video_test.mjs
           node tests/video_writer_test.mjs
           node tests/after_effects_test.mjs

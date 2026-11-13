@@ -66,7 +66,7 @@ try {
     await page.waitForTimeout(400);
     const shot = decodePng(await page.locator('#p').screenshot({ omitBackground: true }));
     check(errors.length === 0 && shot.width === 210 && shot.height === 300, `the module: <ugo9-player> from one script tag, no errors (${shot.width}×${shot.height})`);
-    const exe = findExporter();
+    const exe = (() => { try { return findExporter(); } catch { return null; } })(); // (throws when not built: skipped below)
     if (exe) {
       execFileSync(exe, [model, '--anim', 'idle', '--frames', '1', '--warmup', '0', '--size', '210x300', '--format', 'raw', '--out', path.join(OUT, 'ref.rgba')], { stdio: 'ignore' });
       const ref = fs.readFileSync(path.join(OUT, 'ref.rgba'));

@@ -466,7 +466,7 @@ static uint64_t runs_bytes_raw(const uint8_t *const *tab, const uint32_t *cnt)
 uint32_t ugo_model_mem_size_for(const void *data, uint32_t size)
 {
     const uint8_t *tab[TB_KNOWN];
-    uint32_t cnt[TB_KNOWN], warnings, nt, nk;
+    uint32_t cnt[TB_KNOWN], warnings, nt = 0, nk = 0; /* (set by curve_counts; MSVC's C4701 cannot see it) */
     uint64_t need;
     int e;
     g_last_error = UGO_OK;
@@ -491,7 +491,7 @@ UgoModel *ugo_model_init_sized(void *mem, uint32_t mem_size, const void *data, u
     UgoModel *m = (UgoModel *)mem;
     const uint8_t *p = (const uint8_t *)data;
     const uint32_t *hdr = (const uint32_t *)data;
-    uint32_t i, j, nv, nt, nk, cnt[TB_KNOWN];
+    uint32_t i, j, nv, nt = 0, nk = 0, cnt[TB_KNOWN]; /* (nt, nk: as in ugo_model_mem_size_for) */
     const uint8_t *tab[TB_KNOWN];
     int err;
 
